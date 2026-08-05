@@ -132,9 +132,11 @@ A ready-to-copy file is in [`examples/isahat.yml`](examples/isahat.yml).
 | Open redirect | Redirect-parameter tampering with a non-following `Location` probe |
 | Reflected XSS | Benign marker reflected **unencoded** into HTML |
 | SQL injection | Error-based detection via a single-quote probe (confidence-capped) |
+| Path traversal / LFI | Read-only traversal payloads matched against system-file signatures |
+| Authenticated scans | Attach headers/cookies via `--auth auth.json` (secrets never stored) |
 | Surface discovery | Scope-bound crawler, endpoint + form/parameter inventory, technology fingerprinting |
 
-Reports: JSON, Markdown, **SARIF** (code scanning) and **CSV**.
+Reports: JSON, Markdown, **HTML** (self-contained), **SARIF** (code scanning) and **CSV**.
 
 The [ROADMAP.md](ROADMAP.md) covers the web scanner (Phase 2), desktop app
 (Phase 3), AI assistance (Phase 4) and the plugin/integration ecosystem
@@ -147,7 +149,7 @@ isahat/
 ├── src/isahat/
 │   ├── core/          # the shared audit engine (scope, http, crawler, detectors, risk)
 │   ├── cli/           # Typer CLI — a thin shell over core
-│   ├── reporting/     # JSON / Markdown / comparison reporters
+│   ├── reporting/     # JSON / Markdown / HTML / SARIF / CSV / comparison reporters
 │   └── storage/       # local SQLite persistence
 ├── tests/             # offline unit tests
 ├── labs/              # intentionally vulnerable sample targets

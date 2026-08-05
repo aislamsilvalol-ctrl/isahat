@@ -11,6 +11,7 @@ from isahat.core.detectors.base import Detector, DetectorContext
 from isahat.core.detectors.cookies import CookieSecurityDetector
 from isahat.core.detectors.cors import CorsDetector
 from isahat.core.detectors.open_redirect import OpenRedirectDetector
+from isahat.core.detectors.path_traversal import PathTraversalDetector
 from isahat.core.detectors.reflected_xss import ReflectedXssDetector
 from isahat.core.detectors.security_headers import SecurityHeadersDetector
 from isahat.core.detectors.sensitive_files import SensitiveFilesDetector
@@ -22,6 +23,7 @@ __all__ = [
     "Detector",
     "DetectorContext",
     "OpenRedirectDetector",
+    "PathTraversalDetector",
     "ReflectedXssDetector",
     "SecurityHeadersDetector",
     "SensitiveFilesDetector",
@@ -45,4 +47,5 @@ def default_detectors() -> list[Detector]:
         OpenRedirectDetector(),
         ReflectedXssDetector(),
         SqlInjectionErrorDetector(),
+        PathTraversalDetector(),
     ]

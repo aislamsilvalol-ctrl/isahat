@@ -13,7 +13,15 @@ from isahat.core.models import (
     Severity,
     Technology,
 )
-from isahat.reporting import compare_scans, render, to_csv, to_json, to_markdown, to_sarif
+from isahat.reporting import (
+    compare_scans,
+    render,
+    to_csv,
+    to_html,
+    to_json,
+    to_markdown,
+    to_sarif,
+)
 from isahat.reporting.compare import diff_to_markdown
 from isahat.storage import ScanStore
 
@@ -98,6 +106,34 @@ def test_render_supports_new_formats():
     result = make_result(findings=[sample_finding()])
     assert "2.1.0" in render(result, "sarif")
     assert "severity" in render(result, "csv")
+    assert "<!doctype html>" in render(result, "html")
+
+
+def test_html_report_escapes_evidence_payloads():
+    # Evidence carrying an XSS marker must be escaped so opening the report is safe.
+    finding = Finding(
+        title="Reflected XSS",
+        category="Cross-Site Scripting",
+        severity=Severity.HIGH,
+        confidence=Confidence.PROBABLE,
+        endpoint="https://example.com/search",
+        parameter="q",
+        evidence=Evidence(
+            summary="marker reflected unencoded",
+            response="<html>Results: <script>alert(1)</script></html>",
+        ),
+        impact="script execution",
+        recommendation="encode output",
+    )
+    html = to_html(make_result(findings=[finding]))
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "IsaHat Security Audit" in html
+
+
+def test_html_report_empty_findings():
+    html = to_html(make_result())
+    assert "No findings" in html
 
 
 def test_compare_detects_new_and_resolved():

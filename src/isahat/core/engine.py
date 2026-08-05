@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 
 from isahat import __version__
 from isahat.core import tech
+from isahat.core.auth import AuthConfig
 from isahat.core.config import ScanConfig
 from isahat.core.crawler import Crawler
 from isahat.core.detectors import default_detectors
@@ -40,12 +41,14 @@ class ScanEngine:
         scan_type: str = "web",
         detectors: Iterable[Detector] | None = None,
         on_progress: ProgressCallback | None = None,
+        auth: AuthConfig | None = None,
     ) -> None:
         self.target = target
         self.config = config
         self.scan_type = scan_type
         self._detectors = list(detectors) if detectors is not None else default_detectors()
         self._on_progress = on_progress
+        self._auth = auth
         self.scope = Scope.from_config(target, config)
 
     def _emit(self, stage: str, message: str) -> None:
@@ -59,6 +62,7 @@ class ScanEngine:
             target=self.target,
             profile=self.config.scan.profile,
             scan_type=self.scan_type,
+            authenticated=bool(self._auth and not self._auth.is_empty()),
             started_at=started,
             scope=self.scope.to_info(),
             isahat_version=__version__,
@@ -71,6 +75,8 @@ class ScanEngine:
             follow_redirects=self.config.scan.follow_redirects,
             destructive=self.config.safety.destructive_tests,
             concurrency=self.config.scan.concurrency,
+            auth_headers=self._auth.headers if self._auth else None,
+            cookies=self._auth.cookies if self._auth else None,
         ) as client:
             self._emit("crawl", f"crawling {self.target}")
             crawler = Crawler(

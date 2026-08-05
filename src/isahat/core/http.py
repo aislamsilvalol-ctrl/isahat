@@ -85,15 +85,21 @@ class SafeHttpClient:
         follow_redirects: bool = True,
         destructive: bool = False,
         concurrency: int = 5,
+        auth_headers: dict[str, str] | None = None,
+        cookies: dict[str, str] | None = None,
     ) -> None:
         self._scope = scope
         self._destructive = destructive
         self._limiter = _HostRateLimiter(rate_limit)
         self._semaphore = asyncio.Semaphore(max(1, concurrency))
+        headers = {"User-Agent": USER_AGENT}
+        if auth_headers:
+            headers.update(auth_headers)
         self._client = httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=follow_redirects,
-            headers={"User-Agent": USER_AGENT},
+            headers=headers,
+            cookies=cookies or None,
         )
         self.requests_made = 0
 
@@ -140,7 +146,7 @@ class SafeHttpClient:
         async with self._semaphore:
             await self._limiter.acquire(host)
             started = time.perf_counter()
-            response = await self._client.request(method.upper(), url, **kwargs)  # type: ignore[arg-type]
+            response = await self._send_with_retry(method.upper(), url, kwargs)
             elapsed_ms = (time.perf_counter() - started) * 1000
         self.requests_made += 1
         return HttpResponse(
@@ -152,6 +158,22 @@ class SafeHttpClient:
             request_method=method.upper(),
             request_headers=dict(response.request.headers.items()),
         )
+
+    async def _send_with_retry(
+        self, method: str, url: str, kwargs: dict[str, object]
+    ) -> httpx.Response:
+        """Issue the request, retrying once on a transient transport error.
+
+        Safe methods are idempotent, so a single retry after a dropped
+        connection (common with keep-alive under bursty load) is harmless and
+        makes real-world scans over flaky networks more reliable.
+        """
+
+        try:
+            return await self._client.request(method, url, **kwargs)  # type: ignore[arg-type]
+        except httpx.TransportError:
+            await asyncio.sleep(0.1)
+            return await self._client.request(method, url, **kwargs)  # type: ignore[arg-type]
 
     async def get(
         self,

@@ -95,6 +95,14 @@ See `isahat.core.risk`.
 | Open redirect | Redirect parameter tampering | GET a sentinel URL **without following redirects**; inspect `Location` host |
 | Cross-site scripting | Reflected XSS | GET a unique benign marker; report only if reflected **unencoded** in HTML |
 | Injection | Error-based SQLi | Append a single quote; match database error signatures (confidence ≤ probable) |
+| Path traversal / LFI | Directory traversal | GET a small set of read-only traversal payloads; match system-file signatures (e.g. `/etc/passwd`) |
+
+### Authenticated scans
+
+Pass `--auth auth.json` to attach headers and/or cookies to every request so the
+crawler and detectors reach areas behind a login. Auth material is never written
+to stored results and is masked in evidence; the scan records only a boolean
+`authenticated` flag for auditability.
 
 ### Injection points
 
@@ -104,8 +112,8 @@ by default, only **GET** points are used (state-changing POST forms are
 excluded), points are **de-duplicated** by (method, path, parameter), and the
 total is **capped** so a scan never generates unbounded traffic.
 
-Later phases add authentication, authorization (IDOR/BOLA), API-specific checks,
-path traversal, more injection classes and business-logic tests (opt-in). See
+Later phases add authorization (IDOR/BOLA), API-specific checks (REST/GraphQL),
+more injection classes and business-logic tests (opt-in). See
 [ROADMAP.md](../ROADMAP.md).
 
 ## Reducing false positives

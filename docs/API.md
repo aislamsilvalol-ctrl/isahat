@@ -40,11 +40,21 @@ asyncio.run(main())
 ## Rendering reports
 
 ```python
-from isahat.reporting import to_json, to_markdown, render
+from isahat.reporting import to_json, to_markdown, to_html, render
 
 json_text = to_json(result)
 md_text = to_markdown(result)
-same = render(result, "markdown")
+html_text = to_html(result)               # self-contained, script-free
+same = render(result, "sarif")            # or "csv", "html", "json", "markdown"
+```
+
+## Authenticated scans
+
+```python
+from isahat.core import AuthConfig, ScanConfig, ScanEngine, load_auth
+
+auth = load_auth("auth.json")             # or AuthConfig(cookies={"session": "..."})
+engine = ScanEngine("https://example.com", ScanConfig(), auth=auth)
 ```
 
 ## Persistence

@@ -23,9 +23,17 @@ class CorsDetector(Detector):
     category = "Security Misconfiguration"
 
     def _probe_urls(self, ctx: DetectorContext) -> list[str]:
+        # CORS matters most for APIs, so probe JSON/api-looking endpoints first.
+        # This also makes selection deterministic regardless of crawl completion
+        # order when there are more endpoints than the probe budget.
+        def is_apiish(response: HttpResponse) -> bool:
+            ct = response.headers.get("content-type", "")
+            return "json" in ct or "/api" in urlparse(response.url).path.lower()
+
+        ordered = sorted(ctx.responses, key=lambda r: 0 if is_apiish(r) else 1)
         urls: list[str] = []
         seen: set[str] = set()
-        for response in ctx.responses:
+        for response in ordered:
             parsed = urlparse(response.url)
             base = urlunparse(parsed._replace(query="", fragment=""))
             if base in seen:

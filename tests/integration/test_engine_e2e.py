@@ -104,9 +104,36 @@ def test_phase2_active_detectors_find_param_issues(lab_server):
     cors = [f for f in result.findings if f.category == "Security Misconfiguration"
             and "CORS" in f.title]
     assert cors and cors[0].severity in (Severity.HIGH, Severity.MEDIUM)
+    # Path traversal on /download?file=
+    assert "Path Traversal" in categories
 
 
 def test_scope_blocks_out_of_scope_target(lab_server):
     engine = ScanEngine(lab_server, _config())
     # A different host must not be reachable through the engine's client/scope.
     assert not engine.scope.allows("https://example.com/")
+
+
+async def test_authenticated_client_attaches_cookies(lab_server):
+    # The lab's /whoami echoes whether the admin session cookie arrived; this
+    # verifies the auth material actually reaches the target through the client.
+    from isahat.core.auth import AuthConfig
+    from isahat.core.http import SafeHttpClient
+    from isahat.core.scope import Scope
+
+    config = _config()
+    scope = Scope.from_config(lab_server, config)
+    auth = AuthConfig(cookies={"session": "admintoken"})
+    async with SafeHttpClient(
+        scope, rate_limit=0, auth_headers=auth.headers, cookies=auth.cookies
+    ) as client:
+        response = await client.get(lab_server + "/whoami")
+    assert '"auth": true' in response.text
+
+
+def test_authenticated_scan_sets_flag(lab_server):
+    from isahat.core.auth import AuthConfig
+
+    engine = ScanEngine(lab_server, _config(), auth=AuthConfig(cookies={"session": "admintoken"}))
+    result = engine.scan()
+    assert result.authenticated is True

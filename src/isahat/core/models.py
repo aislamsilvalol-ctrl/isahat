@@ -188,6 +188,7 @@ class ScanResult(BaseModel):
     target: str
     profile: str = "safe"
     scan_type: str = "web"
+    authenticated: bool = False
     started_at: datetime = Field(default_factory=_utcnow)
     finished_at: datetime | None = None
     scope: ScopeInfo

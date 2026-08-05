@@ -39,6 +39,8 @@ _DASHBOARD = """<!doctype html><html><head><title>Dashboard</title></head>
   <a href="/search?q=test">search</a>
   <a href="/go?url=/home">go</a>
   <a href="/item?id=1">item</a>
+  <a href="/download?file=readme.txt">download</a>
+  <a href="/whoami">whoami</a>
   <form action="/search" method="get">
     <input type="text" name="q" />
     <input type="submit" />
@@ -99,6 +101,29 @@ class VulnerableHandler(BaseHTTPRequestHandler):
                 )
             else:
                 self._send(200, f'{{"id": "{item_id}", "name": "Widget"}}', "application/json")
+            return
+        if path == "/download":
+            # Path traversal: the file parameter is used to read from disk with
+            # no sanitisation. Traversal payloads reach a fake /etc/passwd.
+            requested = query.get("file", [""])[0]
+            if "etc/passwd" in requested or "..%2f" in requested.lower():
+                self._send(
+                    200,
+                    "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n",
+                    "text/plain",
+                )
+            elif "win.ini" in requested.lower():
+                self._send(200, "[extensions]\nfor 16-bit app support\n", "text/plain")
+            else:
+                self._send(200, f"contents of {requested}", "text/plain")
+            return
+        if path == "/whoami":
+            # Echoes whether the request carried the admin session, so IsaHat's
+            # authenticated-scan wiring can be verified end to end.
+            cookie = self.headers.get("Cookie", "")
+            authed = "session=admintoken" in cookie
+            body = '{"auth": true, "user": "admin"}' if authed else '{"auth": false}'
+            self._send(200, body, "application/json")
             return
         if path == "/api/users":
             # Insecure CORS: reflects any Origin and allows credentials.

@@ -31,13 +31,13 @@ Legend: ✅ done · 🚧 in progress · ⬜ planned
 - ✅ Reflected XSS (safe marker payload, unencoded-reflection check)
 - ✅ SQL Injection (error-based, non-destructive single-quote probe)
 - ✅ Open Redirect (non-following Location probe)
-- ✅ SARIF and CSV reporters
+- ✅ SARIF, CSV and HTML reporters
+- ✅ Authentication/session handling (`--auth auth.json`)
+- ✅ Path Traversal / LFI (read-only signature probe)
 - ⬜ API surface (REST/GraphQL) discovery and API-specific checks
-- ⬜ Authentication/session handling (`--auth auth.json`)
-- ⬜ Path Traversal / LFI
 - ⬜ Boolean/time-based SQLi (opt-in), more injection classes
 - ⬜ Rate-limiting checks (opt-in)
-- ⬜ HTML/PDF reports
+- ⬜ PDF reports
 - ⬜ Resume/cancel long scans (`--resume`)
 
 ## Phase 3 — Desktop application ⬜

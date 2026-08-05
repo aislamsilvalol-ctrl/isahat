@@ -23,8 +23,9 @@ isahat scan <TARGET> [options]
 | `--profile` | `safe` | Audit profile. |
 | `--type` | `web` | Scan type: `web` or `api`. |
 | `--config, -c` | auto | Path to `isahat.yml` (auto-detected in CWD). |
+| `--auth` | — | Path to `auth.json` (headers/cookies) for an authenticated scan. |
 | `--output, -o` | stdout | Write report(s) to a file. |
-| `--format, -f` | `markdown` | `json`, `markdown`, `sarif`, `csv`, or `both`. |
+| `--format, -f` | `markdown` | `json`, `markdown`, `html`, `sarif`, `csv`, or `both`. |
 | `--severity` | — | Only display findings ≥ this severity. |
 | `--fail-on` | — | Exit code 3 if findings ≥ this severity exist. |
 | `--concurrency` | config | Parallel requests. |
@@ -41,23 +42,38 @@ Examples:
 ```bash
 isahat scan https://example.com
 isahat scan https://api.example.com --type api
-isahat scan https://example.com --output report.html   # note: HTML lands in Phase 2
+isahat scan https://example.com --format html -o report.html   # self-contained report
 isahat scan https://example.com --format json
 isahat scan https://example.com --severity high
-isahat scan https://example.com --format both -o report   # writes report.json + report.md
-isahat scan https://example.com --yes --fail-on high       # CI gate
+isahat scan https://example.com --auth auth.json              # authenticated scan
+isahat scan https://example.com --format both -o report        # writes report.json + report.md
+isahat scan https://example.com --yes --fail-on high           # CI gate
 ```
 
 When `--format both` is used with `-o report`, IsaHat writes `report.json` and
 `report.md`.
 
+### Authenticated scans (`--auth`)
+
+Pass an `auth.json` to scan behind a login. Headers and cookies are attached to
+every request; secrets are never written to stored results and are masked in
+evidence.
+
+```json
+{
+  "headers": { "Authorization": "Bearer eyJhbGciOi..." },
+  "cookies": { "session": "abc123" }
+}
+```
+
 ## `isahat report <scan-id>`
 
-Re-render a stored scan in any supported format (`json`, `markdown`, `sarif`,
-`csv`).
+Re-render a stored scan in any supported format (`json`, `markdown`, `html`,
+`sarif`, `csv`).
 
 ```bash
 isahat report 1f985ec9d883 --format markdown
+isahat report 1f985ec9d883 --format html -o report.html
 isahat report 1f985ec9d883 --format json -o report.json
 isahat report 1f985ec9d883 --format sarif -o isahat.sarif   # upload to code scanning
 isahat report 1f985ec9d883 --format csv -o findings.csv

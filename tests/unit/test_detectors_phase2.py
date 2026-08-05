@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from isahat.core.detectors.base import DetectorContext
 from isahat.core.detectors.cors import CorsDetector
 from isahat.core.detectors.open_redirect import OpenRedirectDetector
+from isahat.core.detectors.path_traversal import PathTraversalDetector
 from isahat.core.detectors.reflected_xss import ReflectedXssDetector
 from isahat.core.detectors.sqli_error import SqlInjectionErrorDetector
 from isahat.core.injection import InjectionPoint
@@ -162,3 +163,39 @@ async def test_sqli_no_error_no_finding():
     point = InjectionPoint(url=TARGET + "/item", method="GET", param="id", base_params=(("id", "1"),))
     ctx = ctx_with(routes={"/item": item}, points=[point])
     assert await SqlInjectionErrorDetector().run(ctx) == []
+
+
+# --- Path traversal / LFI ----------------------------------------------
+
+async def test_path_traversal_detected_on_passwd_signature():
+    def download(url, headers):
+        requested = parse_qs(urlparse(url).query).get("file", [""])[0]
+        if "etc/passwd" in requested:
+            return make_response(
+                url,
+                headers={"content-type": "text/plain"},
+                text="root:x:0:0:root:/root:/bin/bash\n",
+            )
+        return make_response(url, headers={"content-type": "text/plain"}, text="normal file")
+
+    point = InjectionPoint(
+        url=TARGET + "/download", method="GET", param="file", base_params=(("file", "a.txt"),)
+    )
+    ctx = ctx_with(routes={"/download": download}, points=[point])
+    findings = await PathTraversalDetector().run(ctx)
+    assert len(findings) == 1
+    assert findings[0].severity == Severity.HIGH
+    assert findings[0].confidence == Confidence.HIGH
+    assert findings[0].parameter == "file"
+    assert findings[0].cwe == "CWE-22"
+
+
+async def test_path_traversal_no_signature_no_finding():
+    def download(url, headers):
+        return make_response(url, headers={"content-type": "text/plain"}, text="safe contents")
+
+    point = InjectionPoint(
+        url=TARGET + "/download", method="GET", param="file", base_params=(("file", "a.txt"),)
+    )
+    ctx = ctx_with(routes={"/download": download}, points=[point])
+    assert await PathTraversalDetector().run(ctx) == []

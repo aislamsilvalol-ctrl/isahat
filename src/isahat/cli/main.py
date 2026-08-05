@@ -11,6 +11,7 @@ from rich.console import Console
 from isahat import __version__
 from isahat.cli import console as ui
 from isahat.cli.exit_codes import ExitCode
+from isahat.core.auth import AuthConfig, load_auth
 from isahat.core.config import ScanConfig, find_default_config, load_config
 from isahat.core.detectors import default_detectors
 from isahat.core.engine import ScanEngine
@@ -107,11 +108,14 @@ def scan(
     config_path: Path | None = typer.Option(
         None, "--config", "-c", help="Path to isahat.yml (auto-detected if omitted)."
     ),
+    auth_path: Path | None = typer.Option(
+        None, "--auth", help="Path to auth.json (headers/cookies) for an authenticated scan."
+    ),
     output: Path | None = typer.Option(
         None, "--output", "-o", help="Write the report to a file instead of stdout."
     ),
     fmt: str = typer.Option(
-        "markdown", "--format", "-f", help="json | markdown | sarif | csv | both."
+        "markdown", "--format", "-f", help="json | markdown | html | sarif | csv | both."
     ),
     severity: str | None = typer.Option(
         None, "--severity", help=f"Only display findings >= this severity ({_SEVERITY_CHOICES})."
@@ -150,6 +154,14 @@ def scan(
         console.print(f"[red]Configuration error:[/red] {exc}")
         _exit(ExitCode.USAGE)
 
+    auth: AuthConfig | None = None
+    if auth_path is not None:
+        try:
+            auth = load_auth(auth_path)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]Auth error:[/red] {exc}")
+            _exit(ExitCode.USAGE)
+
     try:
         scope = Scope.from_config(target, config)
     except ScopeViolation as exc:
@@ -170,7 +182,10 @@ def scan(
         config,
         scan_type=scan_type,
         on_progress=on_progress if verbose else None,
+        auth=auth,
     )
+    if auth is not None and not quiet:
+        console.print("[dim]Authenticated scan: attaching provided headers/cookies.[/dim]")
 
     try:
         if quiet or verbose:
@@ -214,7 +229,7 @@ def scan(
 def report(
     scan_id: str = typer.Argument(..., help="Scan ID to render a report for."),
     fmt: str = typer.Option(
-        "markdown", "--format", "-f", help="json | markdown | sarif | csv."
+        "markdown", "--format", "-f", help="json | markdown | html | sarif | csv."
     ),
     output: Path | None = typer.Option(None, "--output", "-o", help="Write to a file."),
     db_path: Path | None = typer.Option(None, "--db", help="Override the SQLite database path."),

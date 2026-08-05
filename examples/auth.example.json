@@ -1,0 +1,8 @@
+{
+  "headers": {
+    "Authorization": "Bearer REPLACE_WITH_YOUR_TOKEN"
+  },
+  "cookies": {
+    "session": "REPLACE_WITH_YOUR_SESSION_COOKIE"
+  }
+}

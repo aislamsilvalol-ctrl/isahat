@@ -17,10 +17,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Open redirect (non-following `Location` probe)
   - Reflected XSS (benign marker; unencoded-reflection check)
   - Error-based SQL injection (single-quote probe; confidence capped at probable)
-- **SARIF 2.1.0** and **CSV** reporters (`isahat report --format sarif|csv`).
-- Per-request `headers` and `follow_redirects` override on the HTTP client.
+  - Path traversal / LFI (read-only traversal payloads matched against
+    system-file signatures such as `/etc/passwd`)
+- **Authenticated scans** via `--auth auth.json` (`isahat.core.auth`): headers
+  and cookies are attached to every request; secrets are never persisted and are
+  masked in evidence. Results record only an `authenticated` flag.
+- **SARIF 2.1.0**, **CSV** and self-contained **HTML** reporters
+  (`isahat report --format sarif|csv|html`). The HTML report is script-free and
+  escapes all evidence so captured payloads can never execute when opened.
+- Per-request `headers` and `follow_redirects` override on the HTTP client, plus
+  a single automatic retry on transient transport errors (idempotent methods).
 - Lab app extended with vulnerable parameter endpoints (`/search`, `/go`,
-  `/item`) and a permissive-CORS `/api/users`.
+  `/item`, `/download`), an auth-echo `/whoami`, and a permissive-CORS
+  `/api/users`.
 
 ## [0.1.0] - 2026-08-05
 

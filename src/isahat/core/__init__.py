@@ -7,6 +7,7 @@ live only in a front-end: it belongs here.
 
 from __future__ import annotations
 
+from isahat.core.auth import AuthConfig, load_auth
 from isahat.core.config import ScanConfig, load_config
 from isahat.core.engine import ScanEngine
 from isahat.core.models import (
@@ -23,6 +24,7 @@ from isahat.core.models import (
 from isahat.core.scope import Scope, ScopeViolation
 
 __all__ = [
+    "AuthConfig",
     "Confidence",
     "DiscoveredForm",
     "Endpoint",
@@ -36,5 +38,6 @@ __all__ = [
     "ScopeViolation",
     "Severity",
     "Technology",
+    "load_auth",
     "load_config",
 ]
