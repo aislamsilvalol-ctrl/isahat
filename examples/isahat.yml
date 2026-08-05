@@ -1,0 +1,42 @@
+# Example IsaHat configuration.
+# Copy to your project root as `isahat.yml`; the CLI auto-detects it.
+# All fields are optional and fall back to safe defaults.
+
+project:
+  name: example-app
+
+target:
+  url: https://example.com
+  # Only these hosts may ever be contacted. The target host is always included.
+  allowed_hosts:
+    - example.com
+    - api.example.com
+
+scan:
+  profile: safe          # only 'safe' is available in Phase 1
+  concurrency: 5         # max parallel requests
+  timeout: 10            # per-request timeout (seconds)
+  follow_redirects: true
+  max_pages: 100         # crawler page cap
+  max_depth: 3           # crawler depth cap
+
+scope:
+  # If 'include' is set, only matching paths are in scope (glob syntax).
+  include:
+    - /api/*
+    - /dashboard/*
+  # 'exclude' always wins over 'include'. Keep dangerous flows out of scope.
+  exclude:
+    - /logout
+    - /delete-account
+    - /payments/*
+
+report:
+  formats:
+    - json
+    - markdown
+
+safety:
+  destructive_tests: false        # keep false unless you fully understand the impact
+  rate_limit: 3                   # max requests/sec per host
+  require_scope_confirmation: true

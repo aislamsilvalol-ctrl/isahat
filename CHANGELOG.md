@@ -1,0 +1,36 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-08-05
+
+Initial public foundation release (Phase 1).
+
+### Added
+
+- Shared core audit engine (`isahat.core`) used by every front-end.
+- Safe, deny-by-default **scope** policy with per-request enforcement.
+- Rate-limited, scope-aware, non-destructive **HTTP client**.
+- Scope-bound **crawler** with endpoint inventory.
+- Passive **technology fingerprinting**.
+- Detectors: **security headers**, **insecure cookies**, **sensitive files**
+  (non-destructive allowlist with content validation).
+- Separate **severity** and **confidence** models; **risk** prioritisation.
+- **JSON** and **Markdown** reporters; **scan comparison**.
+- Local **SQLite** storage (`report`, `compare`, `list`).
+- Automatic **secret masking** in evidence and reports.
+- Typer-based **CLI**: `scan`, `report`, `compare`, `list`, `plugins`,
+  `doctor`, `version`, with predictable exit codes for CI.
+- Bundled **vulnerable lab app** for demos and tests.
+- Unit and integration tests; `ruff` + `mypy` (strict) clean.
+- Packaging (`pyproject.toml`), `Dockerfile`, `docker-compose.yml`, example
+  `isahat.yml`, and GitHub Actions CI.
+- Documentation: README, architecture, methodology, CLI, API, plugins, threat
+  model, responsible-use, contributing, security policy, and ADRs.
+
+[Unreleased]: https://github.com/isahat/isahat/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/isahat/isahat/releases/tag/v0.1.0

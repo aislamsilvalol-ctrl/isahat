@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a new capability, detector, or improvement.
+title: "feat: "
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and what's missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature or detector. For detectors, note the check and how confidence would be established.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI
+        - Core engine
+        - Detector
+        - Reporting
+        - Storage
+        - Desktop app
+        - Integrations
+        - Docs
+    validations:
+      required: true
+  - type: checkboxes
+    id: responsible-use
+    attributes:
+      label: Responsible use
+      options:
+        - label: This request is for defensive use and does not add destructive, evasive, or unauthorised-access capabilities.
+          required: true

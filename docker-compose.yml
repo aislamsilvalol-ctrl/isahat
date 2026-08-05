@@ -1,0 +1,17 @@
+# Convenience Compose file for running IsaHat in a container.
+#
+#   docker compose build
+#   docker compose run --rm isahat scan https://example.com --yes
+#
+# Scans persist to ./.isahat on the host via the named bind mount.
+services:
+  isahat:
+    build: .
+    image: isahat:local
+    environment:
+      ISAHAT_HOME: /data
+    volumes:
+      - ./.isahat:/data
+    # Override at runtime, e.g.:
+    #   docker compose run --rm isahat scan https://example.com --yes
+    command: ["--help"]

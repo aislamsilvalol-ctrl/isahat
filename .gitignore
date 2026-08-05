@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IsaHat local data (scans, db)
+.isahat/
+*.db
+
+# Reports generated locally
+report.*
+*.sarif
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Node (desktop/web front-ends, later phases)
+node_modules/
+apps/desktop/target/
+apps/*/dist/
+
+# Secrets
+.env
+!.env.example
