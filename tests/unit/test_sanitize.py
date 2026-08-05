@@ -22,6 +22,12 @@ def test_mask_key_value_secret():
     assert "bob" in masked  # non-secret data preserved
 
 
+def test_mask_suffixed_secret_keys():
+    masked = mask_value('{"password_hash": "$2b$12$abc", "access_token": "tok123"}')
+    assert "$2b$12$abc" not in masked
+    assert "tok123" not in masked
+
+
 def test_mask_headers_redacts_sensitive():
     headers = {"Authorization": "Bearer xyz", "Cookie": "s=1", "Accept": "text/html"}
     masked = mask_headers(headers)

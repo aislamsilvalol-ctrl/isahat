@@ -133,6 +133,7 @@ A ready-to-copy file is in [`examples/isahat.yml`](examples/isahat.yml).
 | Reflected XSS | Benign marker reflected **unencoded** into HTML |
 | SQL injection | Error-based detection via a single-quote probe (confidence-capped) |
 | Path traversal / LFI | Read-only traversal payloads matched against system-file signatures |
+| API surface | OpenAPI/Swagger discovery with operation inventory; GraphQL introspection check; excessive-data-exposure in JSON responses |
 | Authenticated scans | Attach headers/cookies via `--auth auth.json` (secrets never stored) |
 | Surface discovery | Scope-bound crawler, endpoint + form/parameter inventory, technology fingerprinting |
 

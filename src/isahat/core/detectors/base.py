@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from isahat.core.http import HttpResponse, SafeHttpClient
 from isahat.core.injection import InjectionPoint
-from isahat.core.models import DiscoveredForm, Finding
+from isahat.core.models import ApiSpec, DiscoveredForm, Finding
 from isahat.core.scope import Scope
 
 
@@ -27,6 +27,7 @@ class DetectorContext:
     responses: list[HttpResponse]
     forms: list[DiscoveredForm] = field(default_factory=list)
     injection_points: list[InjectionPoint] = field(default_factory=list)
+    apis: list[ApiSpec] = field(default_factory=list)
     destructive: bool = False
 
 

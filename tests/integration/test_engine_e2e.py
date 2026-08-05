@@ -108,6 +108,29 @@ def test_phase2_active_detectors_find_param_issues(lab_server):
     assert "Path Traversal" in categories
 
 
+def test_api_surface_discovery_and_api_detectors(lab_server):
+    engine = ScanEngine(lab_server, _config())
+    result = engine.scan()
+
+    # Both the OpenAPI document and the GraphQL endpoint are discovered.
+    kinds = {a.kind for a in result.apis}
+    assert {"rest", "graphql"} <= kinds
+    assert result.stats.apis_discovered == len(result.apis)
+    rest = next(a for a in result.apis if a.kind == "rest")
+    assert rest.title == "Lab API"
+    assert any("GET /api/users" in op for op in rest.operations)
+
+    api_findings = [f for f in result.findings if f.category == "API Security"]
+    titles = " ".join(f.title for f in api_findings)
+    # Introspection left enabled on /graphql.
+    assert "introspection" in titles.lower()
+    # password_hash leaked by /api/users.
+    assert "Sensitive data exposed" in titles
+    # Leaked values are masked in evidence.
+    for finding in api_findings:
+        assert "$2b$12$abc" not in (finding.evidence.response or "")
+
+
 def test_scope_blocks_out_of_scope_target(lab_server):
     engine = ScanEngine(lab_server, _config())
     # A different host must not be reachable through the engine's client/scope.

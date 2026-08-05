@@ -57,6 +57,16 @@ auth = load_auth("auth.json")             # or AuthConfig(cookies={"session": ".
 engine = ScanEngine("https://example.com", ScanConfig(), auth=auth)
 ```
 
+## API surface discovery
+
+```python
+from isahat.core.api import discover_apis
+
+apis = await discover_apis(client, "https://example.com")   # list[ApiSpec]
+for api in apis:
+    print(api.kind, api.url, api.operation_count, api.operations)
+```
+
 ## Persistence
 
 ```python

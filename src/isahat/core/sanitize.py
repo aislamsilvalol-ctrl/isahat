@@ -31,9 +31,11 @@ _SECRET_PATTERNS = [
     re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
     # AWS access key id
     re.compile(r"AKIA[0-9A-Z]{16}"),
-    # Generic "key": "value" / key=value pairs for common secret names
+    # Generic "key": "value" / key=value pairs for common secret names. The key
+    # may carry a suffix (password_hash, access_token, ...) — over-masking is
+    # the safe direction for a redaction function.
     re.compile(
-        r"(?i)(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)"
+        r"(?i)((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[\w-]*)"
         r"([\"']?\s*[:=]\s*[\"']?)([^\s\"',}&]+)"
     ),
 ]

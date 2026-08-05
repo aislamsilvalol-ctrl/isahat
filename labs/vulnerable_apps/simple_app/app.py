@@ -41,6 +41,7 @@ _DASHBOARD = """<!doctype html><html><head><title>Dashboard</title></head>
   <a href="/item?id=1">item</a>
   <a href="/download?file=readme.txt">download</a>
   <a href="/whoami">whoami</a>
+  <a href="/graphql">graphql</a>
   <form action="/search" method="get">
     <input type="text" name="q" />
     <input type="submit" />
@@ -50,6 +51,31 @@ _DASHBOARD = """<!doctype html><html><head><title>Dashboard</title></head>
 
 _ENV_FILE = "DATABASE_URL=postgres://user:password@localhost/app\nAPI_KEY=sk_live_abc123\n"
 _GIT_HEAD = "ref: refs/heads/main\n"
+
+_OPENAPI = """{
+  "openapi": "3.0.1",
+  "info": {"title": "Lab API", "version": "1.0.0"},
+  "paths": {
+    "/api/users": {"get": {"summary": "list users"}},
+    "/api/users/{id}": {"get": {"summary": "get user"}, "delete": {"summary": "delete user"}},
+    "/search": {"get": {"summary": "search"}}
+  }
+}"""
+
+_GRAPHQL_SCHEMA = """{
+  "data": {
+    "__schema": {
+      "queryType": {"name": "Query"},
+      "mutationType": {"name": "Mutation"},
+      "types": [
+        {"name": "Query"},
+        {"name": "Mutation"},
+        {"name": "User"},
+        {"name": "Payment"}
+      ]
+    }
+  }
+}"""
 
 
 class VulnerableHandler(BaseHTTPRequestHandler):
@@ -126,17 +152,33 @@ class VulnerableHandler(BaseHTTPRequestHandler):
             self._send(200, body, "application/json")
             return
         if path == "/api/users":
-            # Insecure CORS: reflects any Origin and allows credentials.
+            # Insecure CORS (reflects any Origin + credentials) AND excessive data
+            # exposure: the JSON leaks a password hash field it never should.
             origin = self.headers.get("Origin", "*")
             self._send(
                 200,
-                '{"users":[{"id":1,"email":"a@example.com"}]}',
+                '{"users":[{"id":1,"email":"a@example.com","password_hash":"$2b$12$abc"}]}',
                 "application/json",
                 extra_headers={
                     "Access-Control-Allow-Origin": origin,
                     "Access-Control-Allow-Credentials": "true",
                 },
             )
+            return
+        if path == "/openapi.json":
+            # Exposed API specification, reachable without auth.
+            self._send(200, _OPENAPI, "application/json")
+            return
+        if path == "/graphql":
+            # GraphQL endpoint with introspection left enabled in production.
+            if "__schema" in parsed.query:
+                self._send(200, _GRAPHQL_SCHEMA, "application/json")
+            else:
+                self._send(
+                    200,
+                    '{"data":{"users":[{"name":"Ada"}]}}',
+                    "application/json",
+                )
             return
 
         if self.path in ("/", "/index.html"):

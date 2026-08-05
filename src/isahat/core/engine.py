@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 
 from isahat import __version__
 from isahat.core import tech
+from isahat.core.api import discover_apis
 from isahat.core.auth import AuthConfig
 from isahat.core.config import ScanConfig
 from isahat.core.crawler import Crawler
@@ -98,6 +99,12 @@ class ScanEngine:
                 names = ", ".join(t.name for t in result.technologies)
                 self._emit("fingerprint", f"technologies: {names}")
 
+            self._emit("discover", "probing API surfaces (OpenAPI/GraphQL)")
+            result.apis = await discover_apis(client, self.target)
+            if result.apis:
+                kinds = ", ".join(f"{a.kind}@{a.url}" for a in result.apis)
+                self._emit("discover", f"api surfaces: {kinds}")
+
             points = collect_get_points([e.url for e in crawl.endpoints], crawl.forms)
             if points:
                 self._emit("discover", f"{len(points)} injection points")
@@ -109,6 +116,7 @@ class ScanEngine:
                 responses=crawl.responses,
                 forms=crawl.forms,
                 injection_points=points,
+                apis=result.apis,
                 destructive=self.config.safety.destructive_tests,
             )
             result.findings = await self._run_detectors(ctx)

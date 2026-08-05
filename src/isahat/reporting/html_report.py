@@ -161,6 +161,7 @@ def to_html(result: ScanResult) -> str:
     <span>Duration: {escape(duration)}</span>
     <span>Endpoints: {result.stats.endpoints_discovered}</span>
     <span>Forms: {result.stats.forms_discovered}</span>
+    <span>APIs: {result.stats.apis_discovered}</span>
     <span>Requests: {result.stats.requests_made}</span>
     <span>IsaHat {escape(__version__)}</span>
   </div>

@@ -11,6 +11,7 @@ from isahat.core.auth import AuthConfig, load_auth
 from isahat.core.config import ScanConfig, load_config
 from isahat.core.engine import ScanEngine
 from isahat.core.models import (
+    ApiSpec,
     Confidence,
     DiscoveredForm,
     Endpoint,
@@ -24,6 +25,7 @@ from isahat.core.models import (
 from isahat.core.scope import Scope, ScopeViolation
 
 __all__ = [
+    "ApiSpec",
     "AuthConfig",
     "Confidence",
     "DiscoveredForm",

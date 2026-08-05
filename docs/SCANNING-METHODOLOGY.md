@@ -97,6 +97,14 @@ See `isahat.core.risk`.
 | Injection | Error-based SQLi | Append a single quote; match database error signatures (confidence ≤ probable) |
 | Path traversal / LFI | Directory traversal | GET a small set of read-only traversal payloads; match system-file signatures (e.g. `/etc/passwd`) |
 
+**API surface (Phase 2):**
+
+| Category | Detector | Method |
+| --- | --- | --- |
+| API discovery | OpenAPI/Swagger + GraphQL | GET a short allowlist of conventional spec locations (`/openapi.json`, `/v3/api-docs`, …) and parse locally; GraphQL confirmed with a minimal read-only introspection probe over GET |
+| API security | GraphQL introspection enabled | Reported when the introspection probe succeeds (no extra traffic — discovery already confirmed it) |
+| API security | Excessive data exposure | Passive scan of JSON responses already collected for sensitive-looking fields (`password_hash`, tokens, IDs); values are masked in evidence; confidence ≤ probable |
+
 ### Authenticated scans
 
 Pass `--auth auth.json` to attach headers and/or cookies to every request so the
@@ -112,8 +120,8 @@ by default, only **GET** points are used (state-changing POST forms are
 excluded), points are **de-duplicated** by (method, path, parameter), and the
 total is **capped** so a scan never generates unbounded traffic.
 
-Later phases add authorization (IDOR/BOLA), API-specific checks (REST/GraphQL),
-more injection classes and business-logic tests (opt-in). See
+Later phases add authorization (IDOR/BOLA), deeper API checks (BOLA/BFLA, mass
+assignment), more injection classes and business-logic tests (opt-in). See
 [ROADMAP.md](../ROADMAP.md).
 
 ## Reducing false positives

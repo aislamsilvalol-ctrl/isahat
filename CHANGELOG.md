@@ -22,14 +22,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Authenticated scans** via `--auth auth.json` (`isahat.core.auth`): headers
   and cookies are attached to every request; secrets are never persisted and are
   masked in evidence. Results record only an `authenticated` flag.
+- **API surface discovery** (`isahat.core.api`): probes conventional
+  OpenAPI/Swagger locations and GraphQL endpoints (read-only GET introspection
+  probe), producing an operation inventory per discovered API (`ApiSpec`).
+- New **API-security detectors**:
+  - GraphQL introspection enabled (confirmed from the discovery probe)
+  - Excessive data exposure in JSON responses (sensitive-looking fields such as
+    `password_hash`; values masked in evidence; confidence capped at probable)
 - **SARIF 2.1.0**, **CSV** and self-contained **HTML** reporters
   (`isahat report --format sarif|csv|html`). The HTML report is script-free and
   escapes all evidence so captured payloads can never execute when opened.
 - Per-request `headers` and `follow_redirects` override on the HTTP client, plus
   a single automatic retry on transient transport errors (idempotent methods).
 - Lab app extended with vulnerable parameter endpoints (`/search`, `/go`,
-  `/item`, `/download`), an auth-echo `/whoami`, and a permissive-CORS
-  `/api/users`.
+  `/item`, `/download`), an auth-echo `/whoami`, an exposed `/openapi.json`, a
+  `/graphql` endpoint with introspection enabled, and a permissive-CORS
+  `/api/users` that leaks a password-hash field.
 
 ## [0.1.0] - 2026-08-05
 
