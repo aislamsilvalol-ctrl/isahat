@@ -13,6 +13,7 @@ from isahat.core.detectors.cors import CorsDetector
 from isahat.core.detectors.graphql_introspection import GraphqlIntrospectionDetector
 from isahat.core.detectors.open_redirect import OpenRedirectDetector
 from isahat.core.detectors.path_traversal import PathTraversalDetector
+from isahat.core.detectors.rate_limiting import RateLimitingDetector
 from isahat.core.detectors.reflected_xss import ReflectedXssDetector
 from isahat.core.detectors.security_headers import SecurityHeadersDetector
 from isahat.core.detectors.sensitive_data import SensitiveDataExposureDetector
@@ -27,6 +28,7 @@ __all__ = [
     "GraphqlIntrospectionDetector",
     "OpenRedirectDetector",
     "PathTraversalDetector",
+    "RateLimitingDetector",
     "ReflectedXssDetector",
     "SecurityHeadersDetector",
     "SensitiveDataExposureDetector",

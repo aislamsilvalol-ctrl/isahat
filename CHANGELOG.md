@@ -34,10 +34,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   escapes all evidence so captured payloads can never execute when opened.
 - Per-request `headers` and `follow_redirects` override on the HTTP client, plus
   a single automatic retry on transient transport errors (idempotent methods).
+- **Scan resume** (`--resume <scan-id>`): the engine checkpoints after every
+  stage (crawl, API discovery, each detector) in a new SQLite `checkpoints`
+  table; an interrupted scan resumes from the first unfinished stage, reusing
+  the crawled surface, API inventory and findings already produced. Completed
+  scans delete their checkpoint.
+- **Opt-in rate-limiting checks** (`--rate-limit-check` /
+  `safety.rate_limit_checks`): a controlled, paced GET burst (capped at 30,
+  interval-configurable) against authentication-looking endpoints only, stopping
+  at the first HTTP 429/lockout signal and logging every attempt in evidence.
+  Never enabled by default; never submits credentials.
 - Lab app extended with vulnerable parameter endpoints (`/search`, `/go`,
   `/item`, `/download`), an auth-echo `/whoami`, an exposed `/openapi.json`, a
-  `/graphql` endpoint with introspection enabled, and a permissive-CORS
-  `/api/users` that leaks a password-hash field.
+  `/graphql` endpoint with introspection enabled, a throttled `/login` (HTTP 429
+  after N requests), and a permissive-CORS `/api/users` that leaks a
+  password-hash field.
 
 ## [0.1.0] - 2026-08-05
 

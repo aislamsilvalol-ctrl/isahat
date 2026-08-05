@@ -105,6 +105,20 @@ See `isahat.core.risk`.
 | API security | GraphQL introspection enabled | Reported when the introspection probe succeeds (no extra traffic — discovery already confirmed it) |
 | API security | Excessive data exposure | Passive scan of JSON responses already collected for sensitive-looking fields (`password_hash`, tokens, IDs); values are masked in evidence; confidence ≤ probable |
 
+**Opt-in controlled checks (never on by default):**
+
+| Category | Detector | Method |
+| --- | --- | --- |
+| Authentication | Missing rate limiting | Small, paced GET burst (capped, interval-configurable) on auth-like endpoints only; stops at the first 429/lockout signal; every request logged in evidence |
+
+### Scan resume
+
+Scans run with storage enabled checkpoint after each pipeline stage (crawl, API
+discovery, every detector). An interrupted scan can be resumed with
+`isahat scan <target> --resume <scan-id>`: the crawled surface, API inventory
+and findings already produced are reused, and only unfinished detectors run.
+Completed scans delete their checkpoint.
+
 ### Authenticated scans
 
 Pass `--auth auth.json` to attach headers and/or cookies to every request so the
@@ -121,8 +135,8 @@ excluded), points are **de-duplicated** by (method, path, parameter), and the
 total is **capped** so a scan never generates unbounded traffic.
 
 Later phases add authorization (IDOR/BOLA), deeper API checks (BOLA/BFLA, mass
-assignment), more injection classes and business-logic tests (opt-in). See
-[ROADMAP.md](../ROADMAP.md).
+assignment), more injection classes, boolean/time-based SQLi (opt-in) and
+business-logic tests (opt-in). See [ROADMAP.md](../ROADMAP.md).
 
 ## Reducing false positives
 

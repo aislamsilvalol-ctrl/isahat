@@ -40,3 +40,7 @@ safety:
   destructive_tests: false        # keep false unless you fully understand the impact
   rate_limit: 3                   # max requests/sec per host
   require_scope_confirmation: true
+  # Opt-in controlled rate-limiting checks (off by default):
+  rate_limit_checks: false        # small paced GET burst on auth-like endpoints
+  rate_limit_burst: 10            # max requests per probed endpoint (hard cap 30)
+  rate_limit_interval: 0.2        # seconds between burst requests

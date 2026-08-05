@@ -135,6 +135,8 @@ A ready-to-copy file is in [`examples/isahat.yml`](examples/isahat.yml).
 | Path traversal / LFI | Read-only traversal payloads matched against system-file signatures |
 | API surface | OpenAPI/Swagger discovery with operation inventory; GraphQL introspection check; excessive-data-exposure in JSON responses |
 | Authenticated scans | Attach headers/cookies via `--auth auth.json` (secrets never stored) |
+| Rate limiting | Opt-in (`--rate-limit-check`): controlled, capped GET burst on auth endpoints; stops at first 429 |
+| Scan resume | Interrupted scans resume from the last checkpoint via `--resume <scan-id>` |
 | Surface discovery | Scope-bound crawler, endpoint + form/parameter inventory, technology fingerprinting |
 
 Reports: JSON, Markdown, **HTML** (self-contained), **SARIF** (code scanning) and **CSV**.

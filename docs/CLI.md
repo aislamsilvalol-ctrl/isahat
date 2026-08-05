@@ -31,6 +31,8 @@ isahat scan <TARGET> [options]
 | `--concurrency` | config | Parallel requests. |
 | `--timeout` | config | Per-request timeout (seconds). |
 | `--rate-limit` | config | Max requests/sec per host. |
+| `--rate-limit-check` | false | Opt-in controlled burst checks for missing rate limiting. |
+| `--resume` | — | Resume an interrupted scan by ID (requires local storage). |
 | `--yes, -y` | false | Confirm authorisation without prompting. |
 | `--quiet, -q` | false | Suppress progress/table output. |
 | `--verbose, -v` | false | Show per-stage progress. |
@@ -65,6 +67,29 @@ evidence.
   "cookies": { "session": "abc123" }
 }
 ```
+
+### Resuming an interrupted scan (`--resume`)
+
+Scans run with storage enabled (the default) checkpoint after every stage. If a
+scan is interrupted (Ctrl+C, crash), resume it from the last completed stage
+instead of starting over:
+
+```bash
+isahat scan https://example.com                    # prints the Scan ID up front
+isahat scan https://example.com --resume 1f985ec9d883
+```
+
+The resumed run reuses the crawled surface, API inventory and findings already
+gathered, and only runs the detectors that had not finished. Completed scans
+delete their checkpoint, so `--resume` only works for interrupted scans.
+
+### Controlled rate-limit checks (`--rate-limit-check`)
+
+Off by default. When enabled, IsaHat sends a small, paced burst of GET requests
+(capped, interval-configurable via `safety.rate_limit_burst` /
+`rate_limit_interval`) to authentication-looking endpoints only, stops at the
+first sign of throttling, and logs every request in evidence. It never submits
+credentials and never uses wordlists.
 
 ## `isahat report <scan-id>`
 

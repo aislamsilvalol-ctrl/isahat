@@ -10,9 +10,11 @@ import json
 import os
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from isahat.core.models import ScanResult
+from isahat.core.state import ScanCheckpoint
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS scans (
@@ -32,6 +34,13 @@ CREATE TABLE IF NOT EXISTS scans (
 );
 CREATE INDEX IF NOT EXISTS idx_scans_target ON scans(target);
 CREATE INDEX IF NOT EXISTS idx_scans_started ON scans(started_at);
+CREATE TABLE IF NOT EXISTS checkpoints (
+    scan_id   TEXT PRIMARY KEY,
+    target    TEXT NOT NULL,
+    stage     TEXT NOT NULL,
+    payload   TEXT NOT NULL,
+    saved_at  TEXT NOT NULL
+);
 """
 
 
@@ -167,3 +176,38 @@ class ScanStore:
         cur = self._conn.execute("DELETE FROM scans WHERE id = ?", (scan_id,))
         self._conn.commit()
         return cur.rowcount > 0
+
+    # -- checkpoints (scan resume) -----------------------------------------
+
+    def save_checkpoint(self, checkpoint: ScanCheckpoint) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO checkpoints (scan_id, target, stage, payload, saved_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(scan_id) DO UPDATE SET
+                target=excluded.target,
+                stage=excluded.stage,
+                payload=excluded.payload,
+                saved_at=excluded.saved_at
+            """,
+            (
+                checkpoint.scan_id,
+                checkpoint.target,
+                checkpoint.stage,
+                checkpoint.model_dump_json(),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def load_checkpoint(self, scan_id: str) -> ScanCheckpoint | None:
+        row = self._conn.execute(
+            "SELECT payload FROM checkpoints WHERE scan_id = ?", (scan_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return ScanCheckpoint.model_validate(json.loads(row["payload"]))
+
+    def delete_checkpoint(self, scan_id: str) -> None:
+        self._conn.execute("DELETE FROM checkpoints WHERE scan_id = ?", (scan_id,))
+        self._conn.commit()

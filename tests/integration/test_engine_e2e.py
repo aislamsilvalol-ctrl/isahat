@@ -137,6 +137,67 @@ def test_scope_blocks_out_of_scope_target(lab_server):
     assert not engine.scope.allows("https://example.com/")
 
 
+def test_rate_limit_check_observes_lab_throttling(lab_server):
+    # Opt-in check: the lab /login throttles (429) after a few hits, so the
+    # detector must confirm the control exists and report nothing.
+    config = _config()
+    config.safety.rate_limit_checks = True
+    config.safety.rate_limit_interval = 0.0
+    engine = ScanEngine(lab_server, config)
+    result = engine.scan()
+    missing = [f for f in result.findings if f.category == "Authentication"]
+    assert missing == []
+
+
+def test_interrupted_scan_resumes_from_checkpoint(lab_server, tmp_path):
+    import pytest
+
+    from isahat.core.detectors import default_detectors
+    from isahat.core.detectors.base import Detector, DetectorContext
+    from isahat.core.models import Finding
+    from isahat.storage import ScanStore
+
+    class BombDetector(Detector):
+        name = "bomb"
+        category = "test"
+
+        async def run(self, ctx: DetectorContext) -> list[Finding]:
+            raise KeyboardInterrupt  # simulate Ctrl+C mid-scan
+
+    db = tmp_path / "isahat.db"
+    scan_id = "resume123"
+    detectors = default_detectors() + [BombDetector()]
+
+    with ScanStore(db) as store:
+        engine = ScanEngine(
+            lab_server, _config(), detectors=detectors, checkpoint_store=store, scan_id=scan_id
+        )
+        with pytest.raises(KeyboardInterrupt):
+            engine.scan()
+        # The interruption left a checkpoint behind.
+        checkpoint = store.load_checkpoint(scan_id)
+        assert checkpoint is not None
+        assert checkpoint.stage == "detectors"
+        assert len(checkpoint.completed_detectors) == len(detectors) - 1
+        assert len(checkpoint.findings) > 0  # findings so far were preserved
+
+        # Resume without the bomb: everything already done is skipped, so the
+        # resumed run needs no further HTTP requests and completes cleanly.
+        resumed = ScanEngine(
+            lab_server,
+            _config(),
+            detectors=detectors[:-1],
+            checkpoint_store=store,
+            scan_id=scan_id,
+        )
+        result = resumed.scan()
+        assert result.id == scan_id
+        assert result.stats.requests_made == 0
+        assert len(result.findings) == len(checkpoint.findings)
+        # A completed scan deletes its checkpoint.
+        assert store.load_checkpoint(scan_id) is None
+
+
 async def test_authenticated_client_attaches_cookies(lab_server):
     # The lab's /whoami echoes whether the admin session cookie arrived; this
     # verifies the auth material actually reaches the target through the client.

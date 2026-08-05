@@ -128,6 +128,14 @@ def scan(
     rate_limit: float | None = typer.Option(
         None, "--rate-limit", help="Max requests/sec per host."
     ),
+    rate_limit_check: bool = typer.Option(
+        False,
+        "--rate-limit-check",
+        help="Opt-in: controlled burst probes for missing rate limiting on auth endpoints.",
+    ),
+    resume: str | None = typer.Option(
+        None, "--resume", help="Resume an interrupted scan by its ID (requires local storage)."
+    ),
     assume_yes: bool = typer.Option(
         False, "--yes", "-y", help="Confirm authorisation without prompting."
     ),
@@ -154,6 +162,9 @@ def scan(
         console.print(f"[red]Configuration error:[/red] {exc}")
         _exit(ExitCode.USAGE)
 
+    if rate_limit_check:
+        config.safety.rate_limit_checks = True
+
     auth: AuthConfig | None = None
     if auth_path is not None:
         try:
@@ -177,15 +188,39 @@ def scan(
         if verbose and not quiet:
             console.print(f"[dim]{stage}[/dim] {message}")
 
+    if resume is not None and no_store:
+        console.print("[red]--resume requires local storage (remove --no-store).[/red]")
+        _exit(ExitCode.USAGE)
+
+    store: ScanStore | None = None
+    if not no_store:
+        store = ScanStore(db_path)
+        if resume is not None and store.load_checkpoint(resume) is None:
+            console.print(
+                f"[red]No checkpoint found for scan '{resume}'.[/red] "
+                "Checkpoints exist only for interrupted scans run with storage enabled."
+            )
+            store.close()
+            _exit(ExitCode.USAGE)
+
     engine = ScanEngine(
         target,
         config,
         scan_type=scan_type,
         on_progress=on_progress if verbose else None,
         auth=auth,
+        checkpoint_store=store,
+        scan_id=resume,
     )
     if auth is not None and not quiet:
         console.print("[dim]Authenticated scan: attaching provided headers/cookies.[/dim]")
+    if rate_limit_check and not quiet:
+        console.print(
+            "[yellow]Rate-limit checks enabled:[/yellow] controlled burst probes "
+            f"(max {config.safety.rate_limit_burst} requests/endpoint) on auth-like endpoints."
+        )
+    if not quiet:
+        console.print(f"[dim]Scan ID: {engine.scan_id} (resume with --resume {engine.scan_id})[/dim]")
 
     try:
         if quiet or verbose:
@@ -195,21 +230,30 @@ def scan(
                 result = engine.scan()
     except ScopeViolation as exc:
         console.print(f"[red]Scope error:[/red] {exc}")
+        if store is not None:
+            store.close()
         _exit(ExitCode.USAGE)
     except KeyboardInterrupt:  # pragma: no cover - interactive
-        console.print("[yellow]Cancelled by user.[/yellow]")
+        console.print(
+            f"[yellow]Cancelled by user.[/yellow] Progress saved — resume with:\n"
+            f"  isahat scan {target} --resume {engine.scan_id}"
+        )
+        if store is not None:
+            store.close()
         _exit(ExitCode.CANCELLED)
     except Exception as exc:  # noqa: BLE001 - surface a clean error and code
         console.print(f"[red]Scan failed:[/red] {exc}")
+        if store is not None:
+            store.close()
         _exit(ExitCode.ERROR)
 
     if min_severity is not None:
         result.findings = result.findings_at_or_above(min_severity)
         result.recompute_stats()
 
-    if not no_store:
-        with ScanStore(db_path) as store:
-            store.save(result)
+    if store is not None:
+        store.save(result)
+        store.close()
 
     if not quiet:
         ui.render_findings_table(console, result)

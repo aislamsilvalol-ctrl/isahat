@@ -52,6 +52,11 @@ class SafetySettings(BaseModel):
     destructive_tests: bool = False
     rate_limit: float = 3.0  # requests per second, per host
     require_scope_confirmation: bool = True
+    # Opt-in controlled rate-limiting checks. Off by default: they issue a
+    # small, paced burst of requests against authentication-looking endpoints.
+    rate_limit_checks: bool = False
+    rate_limit_burst: int = 10  # max requests per probed endpoint (hard cap 30)
+    rate_limit_interval: float = 0.2  # seconds between burst requests
 
 
 class ScanConfig(BaseModel):

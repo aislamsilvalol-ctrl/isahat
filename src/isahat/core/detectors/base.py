@@ -19,6 +19,10 @@ class DetectorContext:
     detectors never issue new requests. Active detectors may use ``client`` to
     make additional *scoped, non-destructive* requests, or iterate the
     pre-computed ``injection_points`` for safe parameter testing.
+
+    ``rate_limit_burst``/``rate_limit_interval`` configure the opt-in,
+    controlled rate-limiting checks (only used when the engine explicitly
+    enables that detector).
     """
 
     target: str
@@ -29,6 +33,8 @@ class DetectorContext:
     injection_points: list[InjectionPoint] = field(default_factory=list)
     apis: list[ApiSpec] = field(default_factory=list)
     destructive: bool = False
+    rate_limit_burst: int = 10
+    rate_limit_interval: float = 0.2
 
 
 class Detector(ABC):

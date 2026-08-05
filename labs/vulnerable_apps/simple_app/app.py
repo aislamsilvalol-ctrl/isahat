@@ -83,6 +83,10 @@ class VulnerableHandler(BaseHTTPRequestHandler):
     sys_version = ""
     # Keep-alive so rapid sequential probes reuse connections (stable for tests).
     protocol_version = "HTTP/1.1"
+    # /login throttles after this many requests (class-level: handlers are
+    # constructed per request, so the counter must live on the class).
+    login_hits: int = 0
+    LOGIN_THROTTLE_AT: int = 8
 
     def _send(
         self,
@@ -193,7 +197,18 @@ class VulnerableHandler(BaseHTTPRequestHandler):
         elif self.path == "/dashboard":
             self._send(200, _DASHBOARD)
         elif self.path == "/login":
-            self._send(200, "<!doctype html><html><body><form></form></body></html>")
+            # Login page throttles after LOGIN_THROTTLE_AT hits (HTTP 429), so
+            # the rate-limiting detector has something to observe.
+            type(self).login_hits += 1
+            if type(self).login_hits > self.LOGIN_THROTTLE_AT:
+                self._send(
+                    429,
+                    "too many requests",
+                    "text/plain",
+                    extra_headers={"Retry-After": "60"},
+                )
+            else:
+                self._send(200, "<!doctype html><html><body><form></form></body></html>")
         elif self.path == "/.env":
             self._send(200, _ENV_FILE, "text/plain")
         elif self.path == "/.git/HEAD":

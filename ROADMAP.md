@@ -36,10 +36,10 @@ Legend: ✅ done · 🚧 in progress · ⬜ planned
 - ✅ Path Traversal / LFI (read-only signature probe)
 - ✅ API surface discovery (OpenAPI/Swagger + GraphQL) and API checks
   (introspection exposure, excessive data exposure)
+- ✅ Rate-limiting checks (opt-in, controlled burst)
+- ✅ Resume interrupted scans (`--resume`, stage checkpoints)
 - ⬜ Boolean/time-based SQLi (opt-in), more injection classes
-- ⬜ Rate-limiting checks (opt-in)
 - ⬜ PDF reports
-- ⬜ Resume/cancel long scans (`--resume`)
 
 ## Phase 3 — Desktop application ⬜
 
