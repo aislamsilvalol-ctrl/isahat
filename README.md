@@ -121,14 +121,20 @@ safety:
 
 A ready-to-copy file is in [`examples/isahat.yml`](examples/isahat.yml).
 
-## What IsaHat checks today (Phase 1)
+## What IsaHat checks today
 
 | Area | Checks |
 | --- | --- |
 | Security headers | Missing CSP, HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy; version disclosure |
 | Session / cookies | Missing `Secure` / `HttpOnly` / `SameSite` on cookies |
 | Sensitive files | Non-destructive allowlist probe (`.git/HEAD`, `.env`, `.DS_Store`, SQL backups) with content validation |
-| Surface discovery | Scope-bound crawler, endpoint inventory, technology fingerprinting |
+| CORS | Insecure `Access-Control-Allow-Origin` (arbitrary-origin reflection, wildcard, credentials) via a controlled `Origin` probe |
+| Open redirect | Redirect-parameter tampering with a non-following `Location` probe |
+| Reflected XSS | Benign marker reflected **unencoded** into HTML |
+| SQL injection | Error-based detection via a single-quote probe (confidence-capped) |
+| Surface discovery | Scope-bound crawler, endpoint + form/parameter inventory, technology fingerprinting |
+
+Reports: JSON, Markdown, **SARIF** (code scanning) and **CSV**.
 
 The [ROADMAP.md](ROADMAP.md) covers the web scanner (Phase 2), desktop app
 (Phase 3), AI assistance (Phase 4) and the plugin/integration ecosystem

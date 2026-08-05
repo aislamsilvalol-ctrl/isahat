@@ -110,7 +110,9 @@ def scan(
     output: Path | None = typer.Option(
         None, "--output", "-o", help="Write the report to a file instead of stdout."
     ),
-    fmt: str = typer.Option("markdown", "--format", "-f", help="json | markdown | both."),
+    fmt: str = typer.Option(
+        "markdown", "--format", "-f", help="json | markdown | sarif | csv | both."
+    ),
     severity: str | None = typer.Option(
         None, "--severity", help=f"Only display findings >= this severity ({_SEVERITY_CHOICES})."
     ),
@@ -211,7 +213,9 @@ def scan(
 @app.command()
 def report(
     scan_id: str = typer.Argument(..., help="Scan ID to render a report for."),
-    fmt: str = typer.Option("markdown", "--format", "-f", help="json | markdown."),
+    fmt: str = typer.Option(
+        "markdown", "--format", "-f", help="json | markdown | sarif | csv."
+    ),
     output: Path | None = typer.Option(None, "--output", "-o", help="Write to a file."),
     db_path: Path | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:

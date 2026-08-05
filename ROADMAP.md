@@ -25,16 +25,19 @@ Legend: ✅ done · 🚧 in progress · ⬜ planned
 
 ## Phase 2 — Web scanner 🚧
 
-- ⬜ Form and parameter discovery/analysis
-- ⬜ API surface (REST) discovery
+- ✅ Form and parameter discovery/analysis
+- ✅ Injection-point model (safe, GET-only, capped)
+- ✅ CORS misconfiguration checks
+- ✅ Reflected XSS (safe marker payload, unencoded-reflection check)
+- ✅ SQL Injection (error-based, non-destructive single-quote probe)
+- ✅ Open Redirect (non-following Location probe)
+- ✅ SARIF and CSV reporters
+- ⬜ API surface (REST/GraphQL) discovery and API-specific checks
 - ⬜ Authentication/session handling (`--auth auth.json`)
-- ⬜ CORS misconfiguration checks
-- ⬜ Reflected XSS (safe, controlled payloads)
-- ⬜ SQL Injection (controlled, non-destructive)
-- ⬜ Open Redirect
-- ⬜ Path Traversal
+- ⬜ Path Traversal / LFI
+- ⬜ Boolean/time-based SQLi (opt-in), more injection classes
 - ⬜ Rate-limiting checks (opt-in)
-- ⬜ SARIF and CSV reporters; HTML/PDF reports
+- ⬜ HTML/PDF reports
 - ⬜ Resume/cancel long scans (`--resume`)
 
 ## Phase 3 — Desktop application ⬜

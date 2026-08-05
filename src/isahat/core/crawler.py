@@ -10,10 +10,10 @@ from __future__ import annotations
 import re
 from collections import deque
 from dataclasses import dataclass, field
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import parse_qs, urldefrag, urljoin, urlparse
 
 from isahat.core.http import HttpResponse, SafeHttpClient
-from isahat.core.models import Endpoint
+from isahat.core.models import DiscoveredForm, Endpoint
 from isahat.core.scope import Scope
 
 # Anchor/src/action extraction. Deliberately simple and dependency-free.
@@ -22,12 +22,19 @@ _LINK_RE = re.compile(
     re.IGNORECASE,
 )
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_FORM_RE = re.compile(r"<form\b[^>]*>(.*?)</form>", re.IGNORECASE | re.DOTALL)
+_FORM_ATTR_RE = re.compile(r"""(\w+)\s*=\s*["']([^"']*)["']""", re.IGNORECASE)
+_INPUT_NAME_RE = re.compile(
+    r"""<(?:input|textarea|select)\b[^>]*?\bname\s*=\s*["']([^"']+)["']""",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 @dataclass
 class CrawlResult:
     responses: list[HttpResponse] = field(default_factory=list)
     endpoints: list[Endpoint] = field(default_factory=list)
+    forms: list[DiscoveredForm] = field(default_factory=list)
 
 
 def _normalise(url: str) -> str:
@@ -68,11 +75,25 @@ class Crawler:
             links.add(absolute)
         return links
 
+    def _extract_forms(self, base_url: str, body: str) -> list[DiscoveredForm]:
+        forms: list[DiscoveredForm] = []
+        for match in _FORM_RE.finditer(body):
+            tag = body[match.start() : match.start() + match.group(0).find(">") + 1]
+            attrs = {k.lower(): v for k, v in _FORM_ATTR_RE.findall(tag)}
+            method = (attrs.get("method") or "GET").upper()
+            action = _normalise(urljoin(base_url, attrs.get("action") or base_url))
+            names = list(dict.fromkeys(_INPUT_NAME_RE.findall(match.group(1))))
+            forms.append(
+                DiscoveredForm(page_url=base_url, action=action, method=method, params=names)
+            )
+        return forms
+
     async def crawl(self, start_url: str) -> CrawlResult:
         result = CrawlResult()
         seen: set[str] = set()
         queue: deque[tuple[str, int]] = deque([(_normalise(start_url), 0)])
         recorded: set[tuple[str, str]] = set()
+        recorded_forms: set[tuple[str, str]] = set()
 
         while queue and len(result.responses) < self._max_pages:
             url, depth = queue.popleft()
@@ -93,12 +114,17 @@ class Crawler:
             if title_match:
                 title = re.sub(r"\s+", " ", title_match.group(1)).strip()[:120]
 
+            # Record the *requested* URL (with its query) rather than the final
+            # redirected URL, so parameters survive redirects for later testing.
+            query = urlparse(url).query
+            params = list(parse_qs(query).keys()) if query else []
             endpoint = Endpoint(
-                url=response.url,
+                url=url,
                 method="GET",
                 status=response.status,
                 content_type=response.headers.get("content-type"),
                 title=title,
+                params=params,
             )
             if endpoint.key() not in recorded:
                 recorded.add(endpoint.key())
@@ -107,6 +133,11 @@ class Crawler:
             content_type = (response.headers.get("content-type") or "").lower()
             if depth >= self._max_depth or "html" not in content_type:
                 continue
+
+            for form in self._extract_forms(response.url, response.text):
+                if form.key() not in recorded_forms and self._scope.allows(form.action):
+                    recorded_forms.add(form.key())
+                    result.forms.append(form)
 
             for link in self._extract_links(response.url, response.text):
                 if link in seen or _same_document_asset(link):

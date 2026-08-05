@@ -24,7 +24,7 @@ isahat scan <TARGET> [options]
 | `--type` | `web` | Scan type: `web` or `api`. |
 | `--config, -c` | auto | Path to `isahat.yml` (auto-detected in CWD). |
 | `--output, -o` | stdout | Write report(s) to a file. |
-| `--format, -f` | `markdown` | `json`, `markdown`, or `both`. |
+| `--format, -f` | `markdown` | `json`, `markdown`, `sarif`, `csv`, or `both`. |
 | `--severity` | — | Only display findings ≥ this severity. |
 | `--fail-on` | — | Exit code 3 if findings ≥ this severity exist. |
 | `--concurrency` | config | Parallel requests. |
@@ -53,11 +53,14 @@ When `--format both` is used with `-o report`, IsaHat writes `report.json` and
 
 ## `isahat report <scan-id>`
 
-Re-render a stored scan.
+Re-render a stored scan in any supported format (`json`, `markdown`, `sarif`,
+`csv`).
 
 ```bash
 isahat report 1f985ec9d883 --format markdown
 isahat report 1f985ec9d883 --format json -o report.json
+isahat report 1f985ec9d883 --format sarif -o isahat.sarif   # upload to code scanning
+isahat report 1f985ec9d883 --format csv -o findings.csv
 ```
 
 ## `isahat compare <old-id> <new-id>`

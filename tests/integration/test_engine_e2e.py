@@ -86,6 +86,26 @@ def test_full_scan_finds_expected_issues(lab_server):
         assert "sk_live_abc123" not in (finding.evidence.response or "")
 
 
+def test_phase2_active_detectors_find_param_issues(lab_server):
+    engine = ScanEngine(lab_server, _config())
+    result = engine.scan()
+
+    categories = {f.category for f in result.findings}
+    # Forms are discovered from the dashboard.
+    assert result.stats.forms_discovered >= 1
+
+    # Reflected XSS on /search?q=
+    assert "Cross-Site Scripting" in categories
+    # Open redirect on /go?url=
+    assert "Open Redirect" in categories
+    # Error-based SQLi on /item?id='
+    assert "Injection" in categories
+    # Insecure CORS on /api/users (reflects Origin + credentials)
+    cors = [f for f in result.findings if f.category == "Security Misconfiguration"
+            and "CORS" in f.title]
+    assert cors and cors[0].severity in (Severity.HIGH, Severity.MEDIUM)
+
+
 def test_scope_blocks_out_of_scope_target(lab_server):
     engine = ScanEngine(lab_server, _config())
     # A different host must not be reachable through the engine's client/scope.

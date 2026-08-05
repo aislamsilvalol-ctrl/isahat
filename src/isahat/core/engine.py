@@ -21,6 +21,7 @@ from isahat.core.crawler import Crawler
 from isahat.core.detectors import default_detectors
 from isahat.core.detectors.base import Detector, DetectorContext
 from isahat.core.http import HttpResponse, SafeHttpClient
+from isahat.core.injection import collect_get_points
 from isahat.core.models import Finding, ScanResult, Technology
 from isahat.core.risk import sort_by_priority
 from isahat.core.scope import Scope
@@ -80,18 +81,28 @@ class ScanEngine:
             )
             crawl = await crawler.crawl(self.target)
             result.endpoints = crawl.endpoints
-            self._emit("crawl", f"discovered {len(crawl.endpoints)} endpoints")
+            result.forms = crawl.forms
+            self._emit(
+                "crawl",
+                f"discovered {len(crawl.endpoints)} endpoints, {len(crawl.forms)} forms",
+            )
 
             result.technologies = self._collect_technologies(crawl.responses)
             if result.technologies:
                 names = ", ".join(t.name for t in result.technologies)
                 self._emit("fingerprint", f"technologies: {names}")
 
+            points = collect_get_points([e.url for e in crawl.endpoints], crawl.forms)
+            if points:
+                self._emit("discover", f"{len(points)} injection points")
+
             ctx = DetectorContext(
                 target=self.target,
                 scope=self.scope,
                 client=client,
                 responses=crawl.responses,
+                forms=crawl.forms,
+                injection_points=points,
                 destructive=self.config.safety.destructive_tests,
             )
             result.findings = await self._run_detectors(ctx)

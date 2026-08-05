@@ -11,6 +11,7 @@ from isahat.core.config import ScanConfig, load_config
 from isahat.core.engine import ScanEngine
 from isahat.core.models import (
     Confidence,
+    DiscoveredForm,
     Endpoint,
     Evidence,
     Finding,
@@ -23,6 +24,7 @@ from isahat.core.scope import Scope, ScopeViolation
 
 __all__ = [
     "Confidence",
+    "DiscoveredForm",
     "Endpoint",
     "Evidence",
     "Finding",

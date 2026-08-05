@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from isahat.core.http import HttpResponse, SafeHttpClient
-from isahat.core.models import Finding
+from isahat.core.injection import InjectionPoint
+from isahat.core.models import DiscoveredForm, Finding
 from isahat.core.scope import Scope
 
 
@@ -16,13 +17,16 @@ class DetectorContext:
 
     ``responses`` holds traffic already captured by the crawler so passive
     detectors never issue new requests. Active detectors may use ``client`` to
-    make additional *scoped, non-destructive* requests.
+    make additional *scoped, non-destructive* requests, or iterate the
+    pre-computed ``injection_points`` for safe parameter testing.
     """
 
     target: str
     scope: Scope
     client: SafeHttpClient
     responses: list[HttpResponse]
+    forms: list[DiscoveredForm] = field(default_factory=list)
+    injection_points: list[InjectionPoint] = field(default_factory=list)
     destructive: bool = False
 
 

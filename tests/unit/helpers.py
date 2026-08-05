@@ -42,21 +42,33 @@ def make_scope(target: str, allowed: list[str] | None = None) -> Scope:
 class FakeClient:
     """A stand-in for :class:`SafeHttpClient` driven by a routing table.
 
-    ``routes`` maps a URL path to an :class:`HttpResponse`. Unknown paths return
-    a 404. It still enforces scope so tests catch accidental out-of-scope probes.
+    ``routes`` maps a URL path to either an :class:`HttpResponse` or a callable
+    ``(url, headers) -> HttpResponse`` for responses that depend on the request
+    (e.g. CORS Origin reflection or query-dependent reflection). Unknown paths
+    return a 404. Scope is enforced so tests catch out-of-scope probes.
     """
 
-    def __init__(self, scope: Scope, routes: dict[str, HttpResponse]) -> None:
+    def __init__(self, scope: Scope, routes: dict[str, object]) -> None:
         self._scope = scope
         self._routes = routes
         self.requests_made = 0
 
-    async def get(self, url: str) -> HttpResponse:
+    async def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        follow_redirects: bool | None = None,
+    ) -> HttpResponse:
         self._scope.require(url)
         self.requests_made += 1
         from urllib.parse import urlparse
 
-        path = urlparse(url).path
-        if path in self._routes:
-            return self._routes[path]
-        return make_response(url, status=404, text="not found")
+        path = urlparse(url).path or "/"
+        route = self._routes.get(path)
+        if route is None:
+            return make_response(url, status=404, text="not found")
+        if callable(route):
+            return route(url, headers or {})
+        assert isinstance(route, HttpResponse)
+        return route

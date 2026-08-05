@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Form and parameter discovery** during crawling (`DiscoveredForm`,
+  `Endpoint.params`), preserving query parameters across redirects.
+- **Injection-point model** (`isahat.core.injection`): safe, GET-only,
+  de-duplicated and capped points for parameter testing.
+- New **safe active detectors** (all non-destructive, scoped, capped):
+  - CORS misconfiguration (controlled `Origin` probe)
+  - Open redirect (non-following `Location` probe)
+  - Reflected XSS (benign marker; unencoded-reflection check)
+  - Error-based SQL injection (single-quote probe; confidence capped at probable)
+- **SARIF 2.1.0** and **CSV** reporters (`isahat report --format sarif|csv`).
+- Per-request `headers` and `follow_redirects` override on the HTTP client.
+- Lab app extended with vulnerable parameter endpoints (`/search`, `/go`,
+  `/item`) and a permissive-CORS `/api/users`.
+
 ## [0.1.0] - 2026-08-05
 
 Initial public foundation release (Phase 1).

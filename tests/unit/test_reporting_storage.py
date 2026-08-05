@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from isahat.core.models import (
     Confidence,
     Endpoint,
@@ -11,7 +13,7 @@ from isahat.core.models import (
     Severity,
     Technology,
 )
-from isahat.reporting import compare_scans, render, to_json, to_markdown
+from isahat.reporting import compare_scans, render, to_csv, to_json, to_markdown, to_sarif
 from isahat.reporting.compare import diff_to_markdown
 from isahat.storage import ScanStore
 
@@ -70,6 +72,32 @@ def test_render_unknown_format_raises():
 
     with pytest.raises(ValueError):
         render(make_result(), "xml")
+
+
+def test_sarif_report_is_valid_json_with_results():
+    result = make_result(findings=[sample_finding(severity=Severity.HIGH)])
+    doc = json.loads(to_sarif(result))
+    assert doc["version"] == "2.1.0"
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "IsaHat"
+    assert len(run["results"]) == 1
+    assert run["results"][0]["level"] == "error"  # HIGH -> error
+    assert run["results"][0]["properties"]["confidence"] == "confirmed"
+
+
+def test_csv_report_has_header_and_rows():
+    result = make_result(findings=[sample_finding()])
+    csv_text = to_csv(result)
+    lines = csv_text.strip().splitlines()
+    assert lines[0].startswith("id,title,category,severity,confidence,priority")
+    assert "Missing CSP" in lines[1]
+    assert len(lines) == 2
+
+
+def test_render_supports_new_formats():
+    result = make_result(findings=[sample_finding()])
+    assert "2.1.0" in render(result, "sarif")
+    assert "severity" in render(result, "csv")
 
 
 def test_compare_detects_new_and_resolved():

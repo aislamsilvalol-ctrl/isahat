@@ -113,16 +113,34 @@ class SafeHttpClient:
                 f"method {upper} is destructive and not allowed by the current profile"
             )
 
-    async def request(self, method: str, url: str) -> HttpResponse:
-        """Perform a scoped, rate-limited request. Raises on scope/method violations."""
+    async def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        follow_redirects: bool | None = None,
+    ) -> HttpResponse:
+        """Perform a scoped, rate-limited request. Raises on scope/method violations.
+
+        ``headers`` adds request headers for controlled probes (e.g. an ``Origin``
+        for CORS checks). ``follow_redirects`` overrides the client default for a
+        single request — detectors that inspect ``Location`` (open redirect) pass
+        ``False`` so the redirect is observed rather than followed.
+        """
 
         self._scope.require(url)
         self._check_method(method)
         host = urlparse(url).hostname or ""
+        kwargs: dict[str, object] = {}
+        if headers:
+            kwargs["headers"] = headers
+        if follow_redirects is not None:
+            kwargs["follow_redirects"] = follow_redirects
         async with self._semaphore:
             await self._limiter.acquire(host)
             started = time.perf_counter()
-            response = await self._client.request(method.upper(), url)
+            response = await self._client.request(method.upper(), url, **kwargs)  # type: ignore[arg-type]
             elapsed_ms = (time.perf_counter() - started) * 1000
         self.requests_made += 1
         return HttpResponse(
@@ -135,5 +153,13 @@ class SafeHttpClient:
             request_headers=dict(response.request.headers.items()),
         )
 
-    async def get(self, url: str) -> HttpResponse:
-        return await self.request("GET", url)
+    async def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        follow_redirects: bool | None = None,
+    ) -> HttpResponse:
+        return await self.request(
+            "GET", url, headers=headers, follow_redirects=follow_redirects
+        )

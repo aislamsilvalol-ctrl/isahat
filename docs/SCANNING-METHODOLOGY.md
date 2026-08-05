@@ -76,7 +76,9 @@ Confidence — how sure we are it is real:
 sorted by priority (then severity, then title) so the fix order is obvious.
 See `isahat.core.risk`.
 
-## What Phase 1 checks
+## What IsaHat checks
+
+**Passive / allowlist (Phase 1):**
 
 | Category | Detector | Method |
 | --- | --- | --- |
@@ -85,8 +87,25 @@ See `isahat.core.risk`.
 | Session management | Insecure cookies (Secure/HttpOnly/SameSite) | Passive `Set-Cookie` analysis |
 | Sensitive data exposure | `.git/HEAD`, `.env`, `.DS_Store`, SQL backups | Active allowlist GET + content signature |
 
-Later phases add authentication, authorization, injection (controlled), CORS,
-XSS (safe payloads), API-specific checks and business-logic tests (opt-in). See
+**Parameter-level, safe active (Phase 2):**
+
+| Category | Detector | Method |
+| --- | --- | --- |
+| Security misconfiguration | Insecure CORS | GET with a crafted `Origin`; inspect `Access-Control-Allow-Origin`/`-Credentials` |
+| Open redirect | Redirect parameter tampering | GET a sentinel URL **without following redirects**; inspect `Location` host |
+| Cross-site scripting | Reflected XSS | GET a unique benign marker; report only if reflected **unencoded** in HTML |
+| Injection | Error-based SQLi | Append a single quote; match database error signatures (confidence ≤ probable) |
+
+### Injection points
+
+Parameter-level detectors operate on **injection points** discovered during
+crawling — query-string parameters and GET form fields. To stay non-destructive
+by default, only **GET** points are used (state-changing POST forms are
+excluded), points are **de-duplicated** by (method, path, parameter), and the
+total is **capped** so a scan never generates unbounded traffic.
+
+Later phases add authentication, authorization (IDOR/BOLA), API-specific checks,
+path traversal, more injection classes and business-logic tests (opt-in). See
 [ROADMAP.md](../ROADMAP.md).
 
 ## Reducing false positives

@@ -132,9 +132,26 @@ class Endpoint(BaseModel):
     content_type: str | None = None
     discovered_from: str | None = None
     title: str | None = None
+    params: list[str] = Field(default_factory=list)
 
     def key(self) -> tuple[str, str]:
         return (self.method.upper(), self.url)
+
+
+class DiscoveredForm(BaseModel):
+    """An HTML form discovered during crawling.
+
+    ``action`` is the resolved absolute submission URL; ``params`` are the input
+    field names. Used to build injection points for safe parameter testing.
+    """
+
+    page_url: str
+    action: str
+    method: str = "GET"
+    params: list[str] = Field(default_factory=list)
+
+    def key(self) -> tuple[str, str]:
+        return (self.method.upper(), self.action)
 
 
 class Technology(BaseModel):
@@ -148,6 +165,7 @@ class Technology(BaseModel):
 
 class ScanStats(BaseModel):
     endpoints_discovered: int = 0
+    forms_discovered: int = 0
     requests_made: int = 0
     findings_total: int = 0
     by_severity: dict[str, int] = Field(default_factory=dict)
@@ -175,6 +193,7 @@ class ScanResult(BaseModel):
     scope: ScopeInfo
     technologies: list[Technology] = Field(default_factory=list)
     endpoints: list[Endpoint] = Field(default_factory=list)
+    forms: list[DiscoveredForm] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     stats: ScanStats = Field(default_factory=ScanStats)
     isahat_version: str = ""
@@ -186,6 +205,7 @@ class ScanResult(BaseModel):
             by_sev[finding.severity.value] = by_sev.get(finding.severity.value, 0) + 1
             by_conf[finding.confidence.value] = by_conf.get(finding.confidence.value, 0) + 1
         self.stats.endpoints_discovered = len(self.endpoints)
+        self.stats.forms_discovered = len(self.forms)
         self.stats.findings_total = len(self.findings)
         self.stats.by_severity = by_sev
         self.stats.by_confidence = by_conf
