@@ -99,5 +99,5 @@ Initial public foundation release (Phase 1).
 - Documentation: README, architecture, methodology, CLI, API, plugins, threat
   model, responsible-use, contributing, security policy, and ADRs.
 
-[Unreleased]: https://github.com/isahat/isahat/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/isahat/isahat/releases/tag/v0.1.0
+[Unreleased]: https://github.com/aislamsilvalol-ctrl/isabellahat/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/aislamsilvalol-ctrl/isabellahat/releases/tag/v0.1.0

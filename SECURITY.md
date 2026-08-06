@@ -5,7 +5,7 @@
 We take the security of IsaHat seriously. If you discover a vulnerability in the
 tool itself, please report it privately.
 
-- **Preferred:** open a [GitHub Security Advisory](https://github.com/isahat/isahat/security/advisories/new)
+- **Preferred:** open a [GitHub Security Advisory](https://github.com/aislamsilvalol-ctrl/isabellahat/security/advisories/new)
   (private, coordinated disclosure).
 - **Alternative:** email `security@isahat.dev` with details.
 

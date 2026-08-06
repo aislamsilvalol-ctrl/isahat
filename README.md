@@ -9,7 +9,7 @@ modern web apps, APIs and systems — from your terminal or a graphical app,
 sharing one audit engine.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/isahat/isahat/actions/workflows/ci.yml/badge.svg)](https://github.com/isahat/isahat/actions/workflows/ci.yml)
+[![CI](https://github.com/aislamsilvalol-ctrl/isabellahat/actions/workflows/ci.yml/badge.svg)](https://github.com/aislamsilvalol-ctrl/isabellahat/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
 </div>
@@ -55,7 +55,7 @@ Requires Python 3.11+.
 
 ```bash
 # from source (recommended during alpha)
-git clone https://github.com/isahat/isahat.git
+git clone https://github.com/aislamsilvalol-ctrl/isabellahat.git
 cd isahat
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

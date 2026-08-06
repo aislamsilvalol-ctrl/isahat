@@ -42,10 +42,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/isahat/isahat"
-Repository = "https://github.com/isahat/isahat"
-Documentation = "https://github.com/isahat/isahat/tree/main/docs"
-Issues = "https://github.com/isahat/isahat/issues"
+Homepage = "https://github.com/aislamsilvalol-ctrl/isabellahat"
+Repository = "https://github.com/aislamsilvalol-ctrl/isabellahat"
+Documentation = "https://github.com/aislamsilvalol-ctrl/isabellahat/tree/main/docs"
+Issues = "https://github.com/aislamsilvalol-ctrl/isabellahat/issues"
 
 [project.optional-dependencies]
 dev = [

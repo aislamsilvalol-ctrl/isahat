@@ -6,7 +6,7 @@ recommended.
 ## From source (recommended during alpha)
 
 ```bash
-git clone https://github.com/isahat/isahat.git
+git clone https://github.com/aislamsilvalol-ctrl/isabellahat.git
 cd isahat
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate

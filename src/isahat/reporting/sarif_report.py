@@ -73,7 +73,7 @@ def to_sarif(result: ScanResult) -> str:
                 "tool": {
                     "driver": {
                         "name": "IsaHat",
-                        "informationUri": "https://github.com/isahat/isahat",
+                        "informationUri": "https://github.com/aislamsilvalol-ctrl/isabellahat",
                         "version": __version__,
                         "rules": list(rules.values()),
                     }
