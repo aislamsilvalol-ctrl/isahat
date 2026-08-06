@@ -32,6 +32,12 @@ export const en = {
     colSeverities: "Severities",
     running: "running",
     open: "Open",
+    resumeTitle: "Interrupted audits",
+    resumeSubtitle: "Progress is checkpointed — pick up exactly where each scan stopped.",
+    resumeStage: "stopped at stage",
+    resumeSaved: "saved",
+    resume: "Resume",
+    resuming: "Resuming…",
   },
   newScan: {
     title: "New audit",

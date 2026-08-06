@@ -1,17 +1,78 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, type ScanRow, type Severity } from "../api/client";
 import { useI18n } from "../i18n";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
+interface CheckpointRow {
+  scan_id: string;
+  target: string;
+  stage: string;
+  saved_at: string;
+  running: boolean;
+}
+
 export function SeverityBadge({ value }: { value: Severity }): JSX.Element {
   return <span className={`badge ${value}`}>{value}</span>;
 }
 
+function InterruptedAudits({
+  checkpoints,
+  onResume,
+}: {
+  checkpoints: CheckpointRow[];
+  onResume: (scanId: string) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  if (checkpoints.length === 0) return <></>;
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 650 }}>
+        {t.dashboard.resumeTitle}
+      </h3>
+      <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5 }}>
+        {t.dashboard.resumeSubtitle}
+      </p>
+      {checkpoints.map((cp) => (
+        <div key={cp.scan_id} className="row-between checkpoint-row">
+          <div>
+            <span className="mono">{cp.target}</span>{" "}
+            <span className="muted">
+              · {t.dashboard.resumeStage} <span className="mono">{cp.stage}</span> ·{" "}
+              {t.dashboard.resumeSaved}{" "}
+              {cp.saved_at ? new Date(cp.saved_at).toLocaleString() : ""}
+            </span>
+          </div>
+          {cp.running ? (
+            <Link className="button secondary" to={`/scans/${cp.scan_id}`}>
+              <span className="spinner" /> {t.dashboard.running}
+            </Link>
+          ) : (
+            <button
+              disabled={busyId === cp.scan_id}
+              onClick={() => {
+                setBusyId(cp.scan_id);
+                onResume(cp.scan_id);
+              }}
+            >
+              {busyId === cp.scan_id ? t.dashboard.resuming : `▶ ${t.dashboard.resume}`}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard(): JSX.Element {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [scans, setScans] = useState<ScanRow[] | null>(null);
+  const [checkpoints, setCheckpoints] = useState<CheckpointRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -21,6 +82,10 @@ export default function Dashboard(): JSX.Element {
         .listScans()
         .then((rows) => alive && setScans(rows))
         .catch((err: Error) => alive && setError(err.message));
+      api
+        .listCheckpoints()
+        .then((rows) => alive && setCheckpoints(rows))
+        .catch(() => undefined); // checkpoints are best-effort
     };
     load();
     const timer = setInterval(load, 5000); // live-ish: running scans update
@@ -29,6 +94,15 @@ export default function Dashboard(): JSX.Element {
       clearInterval(timer);
     };
   }, []);
+
+  async function onResume(scanId: string): Promise<void> {
+    try {
+      await api.resumeScan(scanId);
+      navigate(`/scans/${scanId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   const totals = (scans ?? []).reduce(
     (acc, row) => {
@@ -66,6 +140,9 @@ export default function Dashboard(): JSX.Element {
       </div>
 
       {error && <p className="error-text">{error}</p>}
+
+      <InterruptedAudits checkpoints={checkpoints} onResume={onResume} />
+
       {scans === null && !error && (
         <p className="muted">
           <span className="spinner" /> {t.dashboard.loading}

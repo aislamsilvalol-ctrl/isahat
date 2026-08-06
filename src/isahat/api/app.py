@@ -70,8 +70,9 @@ class ScanStatus(BaseModel):
 class _ScanJob:
     """A running (or finished) scan and its progress event buffer."""
 
-    def __init__(self, scan_id: str) -> None:
+    def __init__(self, scan_id: str, target: str = "") -> None:
         self.scan_id = scan_id
+        self.target = target
         self.events: list[dict[str, Any]] = []
         self.status = "running"
         self.detail = ""
@@ -154,7 +155,7 @@ def create_app(
                 ),
             )
         scan_id = uuid.uuid4().hex[:12]
-        job = _ScanJob(scan_id)
+        job = _ScanJob(scan_id, target=request.target)
         jobs[scan_id] = job
         await job.publish("queued", f"scan queued for {request.target}")
         job.task = asyncio.create_task(_run_scan(job, request))
@@ -163,7 +164,8 @@ def create_app(
     @app.get("/scans")
     def list_scans(limit: Annotated[int, Query(ge=1, le=200)] = 50) -> list[dict[str, Any]]:
         rows = store.list(limit=limit)
-        return [
+        known = {row.id for row in rows}
+        out: list[dict[str, Any]] = [
             {
                 "id": row.id,
                 "target": row.target,
@@ -182,6 +184,63 @@ def create_app(
             }
             for row in rows
         ]
+        # In-flight scans are not persisted until completion; surface them so
+        # closing the UI never "loses" a running audit.
+        for scan_id, job in jobs.items():
+            if scan_id not in known and job.status == "running":
+                out.insert(
+                    0,
+                    {
+                        "id": scan_id,
+                        "target": job.target,
+                        "profile": "",
+                        "started_at": "",
+                        "finished_at": None,
+                        "findings_total": 0,
+                        "by_severity": {},
+                        "running": True,
+                    },
+                )
+        return out
+
+    @app.get("/checkpoints")
+    def list_checkpoints() -> list[dict[str, Any]]:
+        """Interrupted scans that can be resumed, newest first."""
+
+        return [
+            {
+                "scan_id": cp.scan_id,
+                "target": cp.target,
+                "stage": cp.stage,
+                "saved_at": cp.saved_at,
+                "running": cp.scan_id in jobs and jobs[cp.scan_id].status == "running",
+            }
+            for cp in store.list_checkpoints()
+        ]
+
+    @app.post("/scans/{scan_id}/resume", status_code=202)
+    async def resume_scan(scan_id: str) -> ScanAccepted:
+        """Resume an interrupted scan from its checkpoint (same engine path as
+        `isahat scan <target> --resume <id>`)."""
+
+        existing = jobs.get(scan_id)
+        if existing is not None and existing.status == "running":
+            raise HTTPException(status_code=409, detail=f"scan already running: {scan_id}")
+        checkpoint = store.load_checkpoint(scan_id)
+        if checkpoint is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no checkpoint for scan: {scan_id}",
+            )
+        job = _ScanJob(scan_id, target=checkpoint.target)
+        jobs[scan_id] = job
+        await job.publish("resume", f"resuming from stage '{checkpoint.stage}'")
+        # Resume re-runs with the same scan id; the engine loads the checkpoint
+        # from the store itself. Authorisation was confirmed for the original
+        # run — the checkpoint is proof of it.
+        request = ScanRequest(target=checkpoint.target, confirmed=True)
+        job.task = asyncio.create_task(_run_scan(job, request))
+        return ScanAccepted(scan_id=scan_id, target=checkpoint.target)
 
     @app.get("/scans/{scan_id}")
     def get_scan(scan_id: str) -> ScanResult:

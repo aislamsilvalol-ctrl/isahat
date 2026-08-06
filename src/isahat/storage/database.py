@@ -6,6 +6,7 @@ comparison are fast while the complete result is always recoverable.
 
 from __future__ import annotations
 
+import builtins
 import functools
 import json
 import os
@@ -73,6 +74,16 @@ def default_db_path() -> Path:
     base = Path(home) if home else Path.home() / ".isahat"
     base.mkdir(parents=True, exist_ok=True)
     return base / "isahat.db"
+
+
+@dataclass
+class CheckpointSummary:
+    """An interrupted scan that can be resumed, for listing purposes."""
+
+    scan_id: str
+    target: str
+    stage: str
+    saved_at: str
 
 
 @dataclass
@@ -251,6 +262,24 @@ class ScanStore:
     def delete_checkpoint(self, scan_id: str) -> None:
         self._conn.execute("DELETE FROM checkpoints WHERE scan_id = ?", (scan_id,))
         self._conn.commit()
+
+    @_synchronized
+    def list_checkpoints(self) -> builtins.list[CheckpointSummary]:
+        rows = self._conn.execute(
+            """
+            SELECT scan_id, target, stage, saved_at
+            FROM checkpoints ORDER BY saved_at DESC
+            """
+        ).fetchall()
+        return [
+            CheckpointSummary(
+                scan_id=row["scan_id"],
+                target=row["target"],
+                stage=row["stage"],
+                saved_at=row["saved_at"],
+            )
+            for row in rows
+        ]
 
     # -- annotations (finding review state) ---------------------------------
 

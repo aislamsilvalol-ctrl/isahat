@@ -31,6 +31,12 @@ export const pt: Dictionary = {
     colSeverities: "Severidades",
     running: "executando",
     open: "Abrir",
+    resumeTitle: "Auditorias interrompidas",
+    resumeSubtitle: "O progresso fica salvo em checkpoints — retome de onde cada scan parou.",
+    resumeStage: "parou no estágio",
+    resumeSaved: "salvo",
+    resume: "Continuar",
+    resuming: "Retomando…",
   },
   newScan: {
     title: "Nova auditoria",

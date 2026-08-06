@@ -57,7 +57,7 @@ function Shell(): JSX.Element {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">⛨</span>
+          <span className="brand-mark">◈</span>
           <span>
             <div className="brand-name">IsaHat</div>
             <div className="brand-tag">{t.brand.tagline}</div>

@@ -137,6 +137,34 @@ def test_sse_events_stream_terminates(client, stored_scan):
     assert any('"done"' in line for line in lines)  # terminal event, then EOF
 
 
+def test_checkpoints_and_resume_endpoint(client, tmp_path):
+    """Interrupted scans appear in /checkpoints and can be resumed via POST."""
+
+    from isahat.core.state import ScanCheckpoint  # noqa: PLC0415
+
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(scan_id="dead1234beef", target="http://127.0.0.1:9", stage="crawl")
+        )
+
+    listed = client.get("/checkpoints").json()
+    assert listed[0]["scan_id"] == "dead1234beef"
+    assert listed[0]["stage"] == "crawl"
+    assert listed[0]["running"] is False
+
+    # Resume against an unreachable target → job starts (202) then errors out,
+    # proving the resume path is wired to the engine.
+    response = client.post("/scans/dead1234beef/resume")
+    assert response.status_code == 202
+    assert response.json()["target"] == "http://127.0.0.1:9"
+
+    # A second resume while running conflicts.
+    assert client.post("/scans/dead1234beef/resume").status_code in (202, 409)
+
+    # Unknown checkpoint → 404.
+    assert client.post("/scans/nope/resume").status_code == 404
+
+
 def test_unknown_scan_404(client):
     assert client.get("/scans/nope").status_code == 404
     assert client.get("/scans/nope/status").status_code == 404

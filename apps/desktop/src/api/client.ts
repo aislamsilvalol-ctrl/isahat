@@ -169,6 +169,23 @@ export const api = {
   compare: (base: string, head: string) =>
     request<CompareResult>(`/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`),
 
+  listCheckpoints: () =>
+    request<
+      {
+        scan_id: string;
+        target: string;
+        stage: string;
+        saved_at: string;
+        running: boolean;
+      }[]
+    >("/checkpoints"),
+
+  resumeScan: (scanId: string) =>
+    request<{ scan_id: string; target: string }>(
+      `/scans/${encodeURIComponent(scanId)}/resume`,
+      { method: "POST" },
+    ),
+
   reportUrl: (scanId: string, fmt: string) =>
     `${BASE}/scans/${encodeURIComponent(scanId)}/report?fmt=${encodeURIComponent(fmt)}`,
 
