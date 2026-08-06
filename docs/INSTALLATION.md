@@ -14,6 +14,27 @@ pip install -e ".[dev]"
 isahat doctor                    # verify the environment
 ```
 
+### Making `isahat` available outside the venv
+
+The editable install puts the `isahat` command inside `.venv/bin`, so a fresh
+terminal without the venv activated will report `command not found`. Pick one:
+
+```bash
+# Option A — activate the venv whenever you use the CLI
+source .venv/bin/activate
+
+# Option B — symlink the entrypoint onto your PATH (macOS/Linux)
+mkdir -p ~/.local/bin
+ln -sf "$PWD/.venv/bin/isahat" ~/.local/bin/isahat
+# ~/.local/bin must be on PATH (it usually is on modern distros/macOS).
+
+# Option C — pipx (isolated global install; recommended for end users)
+pipx install .
+```
+
+With option B, recreating the venv (e.g. after `rm -rf .venv`) breaks the link
+— rerun the `ln` command after reinstalling.
+
 ## From PyPI (planned)
 
 Once published:
@@ -74,5 +95,6 @@ isahat plugins list
 
 ```bash
 pip uninstall isahat
-rm -rf ~/.isahat        # remove stored scans (optional)
+rm -f ~/.local/bin/isahat   # if you created the symlink
+rm -rf ~/.isahat            # remove stored scans (optional)
 ```
