@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type ScanRow, type Severity } from "../api/client";
+import { useI18n } from "../i18n";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
@@ -9,6 +10,7 @@ export function SeverityBadge({ value }: { value: Severity }): JSX.Element {
 }
 
 export default function Dashboard(): JSX.Element {
+  const { t } = useI18n();
   const [scans, setScans] = useState<ScanRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,17 +42,21 @@ export default function Dashboard(): JSX.Element {
     <div>
       <div className="row-between">
         <div>
-          <h1>Security posture</h1>
-          <p className="page-sub">Every audit of every authorised target.</p>
+          <h1>{t.dashboard.title}</h1>
+          <p className="page-sub">{t.dashboard.subtitle}</p>
         </div>
         <Link className="button" to="/new">
-          New audit
+          ＋ {t.dashboard.newAudit}
         </Link>
       </div>
 
       <div className="stat-grid">
         {SEVERITIES.map((sev) => (
-          <div className="stat" key={sev}>
+          <div
+            className="stat"
+            key={sev}
+            style={{ ["--stat-color" as string]: `var(--${sev})` }}
+          >
             <div className="num" style={{ color: `var(--${sev})` }}>
               {totals[sev]}
             </div>
@@ -62,28 +68,32 @@ export default function Dashboard(): JSX.Element {
       {error && <p className="error-text">{error}</p>}
       {scans === null && !error && (
         <p className="muted">
-          <span className="spinner" /> Loading history…
+          <span className="spinner" /> {t.dashboard.loading}
         </p>
       )}
 
       {scans !== null && scans.length === 0 && (
-        <div className="card">
-          <p className="muted">
-            No audits yet. Start one — remember, only targets you own or are
-            explicitly authorised to test.
+        <div className="card empty-state">
+          <div className="empty-icon">⛨</div>
+          <h3>{t.dashboard.emptyTitle}</h3>
+          <p className="muted" style={{ maxWidth: 420, margin: "0 auto 18px" }}>
+            {t.dashboard.emptyBody}
           </p>
+          <Link className="button" to="/new">
+            {t.dashboard.emptyCta}
+          </Link>
         </div>
       )}
 
       {scans !== null && scans.length > 0 && (
-        <div className="card">
+        <div className="card" style={{ padding: "8px 20px" }}>
           <table>
             <thead>
               <tr>
-                <th>Target</th>
-                <th>Started</th>
-                <th>Findings</th>
-                <th>Severities</th>
+                <th>{t.dashboard.colTarget}</th>
+                <th>{t.dashboard.colStarted}</th>
+                <th>{t.dashboard.colFindings}</th>
+                <th>{t.dashboard.colSeverities}</th>
                 <th></th>
               </tr>
             </thead>
@@ -96,22 +106,23 @@ export default function Dashboard(): JSX.Element {
                     {row.running && (
                       <span>
                         {" "}
-                        <span className="spinner" /> running
+                        <span className="spinner" /> {t.dashboard.running}
                       </span>
                     )}
                   </td>
-                  <td>{row.findings_total}</td>
+                  <td style={{ fontWeight: 600 }}>{row.findings_total}</td>
                   <td>
                     {SEVERITIES.filter((s) => (row.by_severity[s] ?? 0) > 0).map(
                       (s) => (
-                        <span key={s} style={{ marginRight: 6 }}>
-                          <SeverityBadge value={s} /> {row.by_severity[s]}
+                        <span key={s} style={{ marginRight: 8 }}>
+                          <SeverityBadge value={s} />{" "}
+                          <span className="muted">{row.by_severity[s]}</span>
                         </span>
                       ),
                     )}
                   </td>
-                  <td>
-                    <Link to={`/scans/${row.id}`}>Open</Link>
+                  <td style={{ textAlign: "right" }}>
+                    <Link to={`/scans/${row.id}`}>{t.dashboard.open} →</Link>
                   </td>
                 </tr>
               ))}

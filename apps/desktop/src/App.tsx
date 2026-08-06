@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { api } from "./api/client";
+import { I18nProvider, useI18n } from "./i18n";
 import Compare from "./screens/Compare";
 import Dashboard from "./screens/Dashboard";
 import NewScan from "./screens/NewScan";
 import ScanDetail from "./screens/ScanDetail";
 
 function BridgeBanner(): JSX.Element {
+  const { t } = useI18n();
   const [state, setState] = useState<"checking" | "ok" | "down">("checking");
 
   useEffect(() => {
@@ -20,9 +22,7 @@ function BridgeBanner(): JSX.Element {
     check();
     // Keep retrying while down so the banner clears when `isahat serve`
     // comes up after the UI, without a manual reload.
-    const timer = setInterval(() => {
-      if (alive) check();
-    }, 4000);
+    const timer = setInterval(check, 4000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -32,32 +32,56 @@ function BridgeBanner(): JSX.Element {
   if (state === "ok") return <></>;
   return (
     <div className={`bridge-banner ${state}`}>
-      {state === "checking"
-        ? "Connecting to the local engine…"
-        : "Engine offline — start it with `isahat serve` in a terminal."}
+      {state === "checking" ? t.bridge.checking : t.bridge.down}
     </div>
   );
 }
 
-export default function App(): JSX.Element {
+function LanguageSwitch(): JSX.Element {
+  const { lang, setLang, t } = useI18n();
+  return (
+    <div className="lang-switch" role="group" aria-label={t.lang.label}>
+      <button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>
+        EN
+      </button>
+      <button className={lang === "pt" ? "on" : ""} onClick={() => setLang("pt")}>
+        PT
+      </button>
+    </div>
+  );
+}
+
+function Shell(): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">⛨</span>
-          <span className="brand-name">IsaHat</span>
+          <span>
+            <div className="brand-name">IsaHat</div>
+            <div className="brand-tag">{t.brand.tagline}</div>
+          </span>
         </div>
         <nav>
           <NavLink to="/" end>
-            Dashboard
+            <span className="nav-icon">◫</span>
+            {t.nav.dashboard}
           </NavLink>
-          <NavLink to="/new">New audit</NavLink>
-          <NavLink to="/compare">Compare</NavLink>
+          <NavLink to="/new">
+            <span className="nav-icon">＋</span>
+            {t.nav.newScan}
+          </NavLink>
+          <NavLink to="/compare">
+            <span className="nav-icon">⇄</span>
+            {t.nav.compare}
+          </NavLink>
         </nav>
         <footer className="sidebar-footer">
-          Authorised targets only.
+          <LanguageSwitch />
+          {t.footer.notice}
           <br />
-          See RESPONSIBLE-USE.md.
+          {t.footer.link}
         </footer>
       </aside>
       <main className="content">
@@ -70,5 +94,13 @@ export default function App(): JSX.Element {
         </Routes>
       </main>
     </div>
+  );
+}
+
+export default function App(): JSX.Element {
+  return (
+    <I18nProvider>
+      <Shell />
+    </I18nProvider>
   );
 }

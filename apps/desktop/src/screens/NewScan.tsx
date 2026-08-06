@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type AuthConfig } from "../api/client";
+import { useI18n } from "../i18n";
 
 /**
  * Start-audit form. The authorisation checklist is not cosmetic: the bridge
@@ -8,6 +9,7 @@ import { api, type AuthConfig } from "../api/client";
  * only sends it after the user ticks every item.
  */
 export default function NewScan(): JSX.Element {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [target, setTarget] = useState("");
   const [profile, setProfile] = useState("safe");
@@ -29,7 +31,7 @@ export default function NewScan(): JSX.Element {
       try {
         auth = JSON.parse(authJson) as AuthConfig;
       } catch {
-        setError("Auth JSON is invalid — expected an object with headers/cookies.");
+        setError(t.newScan.authInvalid);
         return;
       }
     }
@@ -52,93 +54,92 @@ export default function NewScan(): JSX.Element {
   }
 
   return (
-    <div style={{ maxWidth: 560 }}>
-      <h1>New audit</h1>
-      <p className="page-sub">Same engine as the CLI — no GUI-only behaviour.</p>
+    <div style={{ maxWidth: 580 }}>
+      <h1>{t.newScan.title}</h1>
+      <p className="page-sub">{t.newScan.subtitle}</p>
 
       <form onSubmit={onSubmit} className="card">
-        <label htmlFor="target">Target URL</label>
+        <label htmlFor="target">{t.newScan.target}</label>
         <input
           id="target"
-          placeholder="https://staging.example.com"
+          placeholder={t.newScan.targetPlaceholder}
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           required
           type="url"
         />
 
-        <label htmlFor="profile">Profile</label>
+        <label htmlFor="profile">{t.newScan.profile}</label>
         <select id="profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
-          <option value="safe">safe — non-destructive checks only</option>
-          <option value="standard">standard — safe + controlled active checks</option>
+          <option value="safe">{t.newScan.profileSafe}</option>
+          <option value="standard">{t.newScan.profileStandard}</option>
         </select>
 
-        <label htmlFor="scanType">Target type</label>
+        <label htmlFor="scanType">{t.newScan.scanType}</label>
         <select id="scanType" value={scanType} onChange={(e) => setScanType(e.target.value)}>
-          <option value="web">web application</option>
-          <option value="api">API</option>
+          <option value="web">{t.newScan.typeWeb}</option>
+          <option value="api">{t.newScan.typeApi}</option>
         </select>
 
-        <label htmlFor="auth">Auth (optional JSON — headers/cookies, never persisted)</label>
+        <label htmlFor="auth">{t.newScan.auth}</label>
         <textarea
           id="auth"
           rows={3}
-          placeholder='{"headers": {"Authorization": "Bearer …"}}'
+          placeholder={t.newScan.authPlaceholder}
           value={authJson}
           onChange={(e) => setAuthJson(e.target.value)}
         />
 
-        <label className="row-between" style={{ marginTop: 16 }}>
+        <label
+          className="row-between"
+          style={{ marginTop: 18, cursor: "pointer" }}
+          htmlFor="rl"
+        >
           <span>
-            Controlled rate-limit probe{" "}
-            <span className="muted">(small request burst, auto-stops on 429)</span>
+            {t.newScan.rateLimit}{" "}
+            <span className="muted">({t.newScan.rateLimitHint})</span>
           </span>
           <input
+            id="rl"
             type="checkbox"
-            style={{ width: "auto" }}
             checked={rateLimitCheck}
             onChange={(e) => setRateLimitCheck(e.target.checked)}
           />
         </label>
 
         <div className="auth-banner">
-          <strong>Authorisation required.</strong> IsaHat may only be used against
-          systems you own or are explicitly authorised to test. Confirm:
-          <label style={{ marginTop: 10 }}>
+          <strong>{t.newScan.authzTitle}</strong> {t.newScan.authzBody}
+          <label>
             <input
               type="checkbox"
-              style={{ width: "auto", marginRight: 8 }}
               checked={checks.own}
               onChange={(e) => setChecks({ ...checks, own: e.target.checked })}
             />
-            I own this system or hold written authorisation to test it.
+            {t.newScan.checkOwn}
           </label>
           <label>
             <input
               type="checkbox"
-              style={{ width: "auto", marginRight: 8 }}
               checked={checks.scope}
               onChange={(e) => setChecks({ ...checks, scope: e.target.checked })}
             />
-            The target and all hosts it links to are inside my authorised scope.
+            {t.newScan.checkScope}
           </label>
           <label>
             <input
               type="checkbox"
-              style={{ width: "auto", marginRight: 8 }}
               checked={checks.safe}
               onChange={(e) => setChecks({ ...checks, safe: e.target.checked })}
             />
-            I understand IsaHat runs non-destructive checks only and will not
-            alter data.
+            {t.newScan.checkSafe}
           </label>
         </div>
 
         {error && <p className="error-text">{error}</p>}
 
-        <div style={{ marginTop: 20 }}>
+        <div style={{ marginTop: 22 }}>
           <button type="submit" disabled={!allChecked || busy || !target.trim()}>
-            {busy ? "Starting…" : "Start audit"}
+            {busy ? t.newScan.submitting : t.newScan.submit}
           </button>
         </div>
       </form>

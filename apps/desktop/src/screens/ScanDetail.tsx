@@ -8,14 +8,16 @@ import {
   type ScanResult,
   type Severity,
 } from "../api/client";
+import { useI18n } from "../i18n";
 import { SeverityBadge } from "./Dashboard";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
-const STATE_LABELS: Record<FindingState, string> = {
-  open: "open",
-  false_positive: "false positive",
-  fixed: "fixed",
-  accepted_risk: "accepted risk",
+const SEV_COLOR: Record<Severity, string> = {
+  critical: "var(--critical)",
+  high: "var(--high)",
+  medium: "var(--medium)",
+  low: "var(--low)",
+  info: "var(--info)",
 };
 
 function FindingCard({
@@ -27,7 +29,9 @@ function FindingCard({
   finding: Finding;
   onAnnotated: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"evidence" | "remediation">("remediation");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,48 +48,137 @@ function FindingCard({
     }
   }
 
+  const rem = t.scan.remediation;
+
   return (
-    <div className="card">
-      <div className="row-between">
-        <div>
-          <SeverityBadge value={finding.severity} />{" "}
-          <span className={`badge state-${finding.state}`}>
-            {STATE_LABELS[finding.state]}
-          </span>{" "}
-          <strong>{finding.title}</strong>
+    <div
+      className="card finding"
+      style={{ ["--sev-color" as string]: SEV_COLOR[finding.severity] }}
+    >
+      <div className="finding-head" onClick={() => setOpen(!open)}>
+        <div className="row-between">
+          <div>
+            <SeverityBadge value={finding.severity} />{" "}
+            <span className={`badge state-${finding.state}`}>
+              {t.state[finding.state]}
+            </span>{" "}
+            <strong>{finding.title}</strong>
+          </div>
+          <span className="muted">{open ? `▲ ${t.scan.hide}` : `▼ ${t.scan.show}`}</span>
         </div>
-        <button className="secondary" onClick={() => setOpen(!open)}>
-          {open ? "Hide" : "Evidence"}
-        </button>
-      </div>
-      <div className="muted" style={{ marginTop: 6 }}>
-        <span className="mono">
-          {finding.method} {finding.endpoint}
-        </span>
-        {finding.parameter && <span> · param {finding.parameter}</span>} ·{" "}
-        {finding.category}
-        {finding.cwe && <span> · {finding.cwe}</span>} · confidence:{" "}
-        {finding.confidence}
+        <div className="muted" style={{ marginTop: 7 }}>
+          <span className="mono">
+            {finding.method} {finding.endpoint}
+          </span>
+          {finding.parameter && (
+            <span>
+              {" "}
+              · {t.scan.param} <span className="mono">{finding.parameter}</span>
+            </span>
+          )}{" "}
+          · {finding.category}
+          {finding.cwe && <span> · {finding.cwe}</span>} · {t.scan.confidence}:{" "}
+          {finding.confidence}
+        </div>
       </div>
 
       {open && (
-        <div className="evidence">
-          <div>{finding.evidence.summary}</div>
-          {finding.evidence.request && <pre>{finding.evidence.request}</pre>}
-          {finding.evidence.response && <pre>{finding.evidence.response}</pre>}
-          <div style={{ marginTop: 8 }}>
-            <strong>Impact.</strong> {finding.impact}
-            <br />
-            <strong>Recommendation.</strong> {finding.recommendation}
+        <>
+          <div className="tabs">
+            <button
+              className={tab === "remediation" ? "on" : ""}
+              onClick={() => setTab("remediation")}
+            >
+              {t.scan.tabs.remediation}
+            </button>
+            <button
+              className={tab === "evidence" ? "on" : ""}
+              onClick={() => setTab("evidence")}
+            >
+              {t.scan.tabs.evidence}
+            </button>
           </div>
-          {finding.references.length > 0 && (
-            <div className="muted" style={{ marginTop: 6 }}>
-              {finding.references.map((ref) => (
-                <div key={ref}>{ref}</div>
-              ))}
+
+          {tab === "remediation" && (
+            <div className="remediation">
+              <div className="rem-section">
+                <div className="rem-title">{rem.impact}</div>
+                {finding.impact}
+                {finding.likelihood && finding.likelihood !== "unknown" && (
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    {rem.likelihood}: {finding.likelihood}
+                    {finding.exploitation &&
+                      finding.exploitation !== "n/a" &&
+                      ` · ${rem.exploitation}: ${finding.exploitation}`}
+                  </div>
+                )}
+              </div>
+
+              <div className="rem-section">
+                <div className="rem-title">{rem.recommendation}</div>
+                {finding.recommendation}
+              </div>
+
+              <div className="rem-section">
+                <div className="rem-title">{rem.example}</div>
+                {finding.remediation_example ? (
+                  <pre>
+                    <code>{finding.remediation_example}</code>
+                  </pre>
+                ) : (
+                  <span className="muted">{rem.noExample}</span>
+                )}
+              </div>
+
+              {(finding.false_positive_hints?.length ?? 0) > 0 && (
+                <div className="rem-section">
+                  <div className="rem-title">{rem.fpHints}</div>
+                  <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                    {finding.false_positive_hints!.map((hint) => (
+                      <li key={hint} className="muted">
+                        {hint}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {finding.references.length > 0 && (
+                <div className="rem-section">
+                  <div className="rem-title">{rem.references}</div>
+                  {finding.references.map((ref) => (
+                    <div key={ref}>
+                      <a href={ref} target="_blank" rel="noreferrer">
+                        {ref}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
+
+          {tab === "evidence" && (
+            <div className="evidence">
+              <div className="rem-section">
+                <div className="rem-title">{t.scan.evidenceSummary}</div>
+                {finding.evidence.summary}
+              </div>
+              {finding.evidence.request && (
+                <div className="rem-section">
+                  <div className="rem-title">{t.scan.evidenceRequest}</div>
+                  <pre>{finding.evidence.request}</pre>
+                </div>
+              )}
+              {finding.evidence.response && (
+                <div className="rem-section">
+                  <div className="rem-title">{t.scan.evidenceResponse}</div>
+                  <pre>{finding.evidence.response}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {error && <p className="error-text">{error}</p>}
@@ -96,28 +189,28 @@ function FindingCard({
           disabled={busy || finding.state === "fixed"}
           onClick={() => void mark("fixed")}
         >
-          Mark fixed
+          ✓ {t.scan.markFixed}
         </button>
         <button
           className="secondary"
           disabled={busy || finding.state === "false_positive"}
           onClick={() => void mark("false_positive")}
         >
-          False positive
+          {t.scan.markFp}
         </button>
         <button
           className="secondary"
           disabled={busy || finding.state === "accepted_risk"}
           onClick={() => void mark("accepted_risk")}
         >
-          Accept risk
+          {t.scan.markRisk}
         </button>
         <button
-          className="secondary"
+          className="ghost"
           disabled={busy || finding.state === "open"}
           onClick={() => void mark("open")}
         >
-          Reopen
+          {t.scan.reopen}
         </button>
       </div>
     </div>
@@ -125,6 +218,7 @@ function FindingCard({
 }
 
 export default function ScanDetail(): JSX.Element {
+  const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [events, setEvents] = useState<ScanEvent[]>([]);
@@ -199,9 +293,9 @@ export default function ScanDetail(): JSX.Element {
   if (loadError && !scan) {
     return (
       <div>
-        <h1>Audit</h1>
+        <h1>{t.scan.failed}</h1>
         <p className="error-text">{loadError}</p>
-        <Link to="/">Back to dashboard</Link>
+        <Link to="/">{t.scan.back}</Link>
       </div>
     );
   }
@@ -224,20 +318,20 @@ export default function ScanDetail(): JSX.Element {
     <div>
       <div className="row-between">
         <div>
-          <h1 className="mono" style={{ fontSize: 17 }}>
+          <h1 className="mono" style={{ fontSize: 16, letterSpacing: 0 }}>
             {scan?.target ?? id}
           </h1>
           <p className="page-sub">
             {scan ? (
               <>
-                {scan.stats.findings_total} findings ·{" "}
-                {scan.stats.endpoints_discovered} endpoints ·{" "}
-                {scan.stats.requests_made} requests
+                {scan.stats.findings_total} {t.scan.findings} ·{" "}
+                {scan.stats.endpoints_discovered} {t.scan.endpoints} ·{" "}
+                {scan.stats.requests_made} {t.scan.requests}
                 {durationSeconds !== null && ` · ${durationSeconds.toFixed(1)}s`}
-                {scan.authenticated && " · authenticated"}
+                {scan.authenticated && ` · ${t.scan.authenticated}`}
               </>
             ) : (
-              "Connecting…"
+              t.scan.connecting
             )}
           </p>
         </div>
@@ -250,7 +344,7 @@ export default function ScanDetail(): JSX.Element {
                 href={api.reportUrl(scan.id, fmt)}
                 download
               >
-                {fmt}
+                ↓ {fmt}
               </a>
             ))}
           </div>
@@ -259,15 +353,17 @@ export default function ScanDetail(): JSX.Element {
 
       {runError && (
         <div className="card">
-          <p className="error-text">Scan failed: {runError}</p>
+          <p className="error-text">
+            {t.scan.failed}: {runError}
+          </p>
         </div>
       )}
 
       {running && (
         <div className="card">
-          <div className="row-between" style={{ marginBottom: 10 }}>
+          <div className="row-between" style={{ marginBottom: 12 }}>
             <strong>
-              <span className="spinner" /> Audit running
+              <span className="spinner" /> {t.scan.runningTitle}
             </strong>
           </div>
           <div className="event-log" ref={logRef}>
@@ -283,21 +379,21 @@ export default function ScanDetail(): JSX.Element {
 
       {scan && scan.technologies.length > 0 && (
         <div className="card">
-          <strong>Detected stack:</strong>{" "}
+          <strong>{t.scan.stack}:</strong>{" "}
           {scan.technologies
-            .map((t) => (t.version ? `${t.name} ${t.version}` : t.name))
+            .map((tech) => (tech.version ? `${tech.name} ${tech.version}` : tech.name))
             .join(" · ")}
         </div>
       )}
 
       {scan && (
         <>
-          <div className="filter-row" style={{ marginTop: 18 }}>
+          <div className="filter-row">
             <button
               className={`filter-chip ${filter === null ? "on" : ""}`}
               onClick={() => setFilter(null)}
             >
-              all ({scan.findings.length})
+              {t.scan.filterAll} ({scan.findings.length})
             </button>
             {SEVERITIES.map((sev) => {
               const count = scan.findings.filter((f) => f.severity === sev).length;
@@ -318,8 +414,8 @@ export default function ScanDetail(): JSX.Element {
             <div className="card">
               <p className="muted">
                 {scan.findings.length === 0
-                  ? "No findings — the checks that ran found nothing to report."
-                  : "No findings at this severity."}
+                  ? t.scan.noFindings
+                  : t.scan.noFindingsAtSeverity}
               </p>
             </div>
           )}
