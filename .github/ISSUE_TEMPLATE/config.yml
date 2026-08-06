@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability in IsaHat
-    url: https://github.com/aislamsilvalol-ctrl/isabellahat/security/advisories/new
+    url: https://github.com/aislamsilvalol-ctrl/isahat/security/advisories/new
     about: Please report vulnerabilities privately via a GitHub Security Advisory. Do not open a public issue.
   - name: Question / Discussion
-    url: https://github.com/aislamsilvalol-ctrl/isabellahat/discussions
+    url: https://github.com/aislamsilvalol-ctrl/isahat/discussions
     about: Ask questions and discuss ideas with the community.

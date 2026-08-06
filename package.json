@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aislamsilvalol-ctrl/isabellahat.git"
+    "url": "https://github.com/aislamsilvalol-ctrl/isahat.git"
   },
   "workspaces": [
     "apps/desktop"

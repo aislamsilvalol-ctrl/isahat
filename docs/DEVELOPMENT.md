@@ -8,7 +8,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/aislamsilvalol-ctrl/isabellahat.git
+git clone https://github.com/aislamsilvalol-ctrl/isahat.git
 cd isahat
 python -m venv .venv
 source .venv/bin/activate

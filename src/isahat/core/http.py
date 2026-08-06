@@ -21,7 +21,7 @@ import httpx
 from isahat import __version__
 from isahat.core.scope import Scope
 
-USER_AGENT = f"IsaHat/{__version__} (+https://github.com/aislamsilvalol-ctrl/isabellahat; authorized-scan)"
+USER_AGENT = f"IsaHat/{__version__} (+https://github.com/aislamsilvalol-ctrl/isahat; authorized-scan)"
 
 # Methods considered non-destructive and therefore always allowed.
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
