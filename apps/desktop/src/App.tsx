@@ -11,12 +11,21 @@ function BridgeBanner(): JSX.Element {
 
   useEffect(() => {
     let alive = true;
-    api
-      .health()
-      .then(() => alive && setState("ok"))
-      .catch(() => alive && setState("down"));
+    const check = (): void => {
+      api
+        .health()
+        .then(() => alive && setState("ok"))
+        .catch(() => alive && setState("down"));
+    };
+    check();
+    // Keep retrying while down so the banner clears when `isahat serve`
+    // comes up after the UI, without a manual reload.
+    const timer = setInterval(() => {
+      if (alive) check();
+    }, 4000);
     return () => {
       alive = false;
+      clearInterval(timer);
     };
   }, []);
 
