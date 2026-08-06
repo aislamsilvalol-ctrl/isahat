@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Local bridge API** (`isahat serve`, `isahat.api`): a loopback-only FastAPI
+  application exposing the shared engine to front-ends — start scans
+  (`POST /scans`, explicit authorisation confirmation required), live progress
+  over SSE (`/scans/{id}/events`), status, history, rendered reports
+  (`/scans/{id}/report?fmt=`), comparison (`/compare`) and health. CORS is
+  restricted to localhost/Tauri origins; scope enforcement and evidence
+  sanitisation stay in the core, so no client can bypass them.
+- **Finding review workflow** (`FindingAnnotation`, SQLite `annotations`
+  table): mark findings fixed / false-positive / accepted-risk / reopen, with
+  comments, keyed by the stable finding fingerprint so review decisions survive
+  re-scans of the same endpoint. `ScanStore` is now thread-safe
+  (`check_same_thread=False` + a re-entrant lock) so bridge scan jobs can share
+  it across asyncio worker threads.
+- **Desktop application** (`apps/desktop`): Tauri 2 + React 18 + TypeScript
+  shell over the bridge — dashboard with per-severity totals and live history,
+  new-audit form with the authorisation checklist (server-enforced), live audit
+  view with SSE progress, findings with severity filters and sanitized evidence
+  viewer, report export (HTML/Markdown/JSON), review actions and audit
+  comparison. Strict TypeScript, `npm run typecheck` in CI (Node 20 job).
+- CI: `desktop` job type-checks and builds the UI bundle on every PR.
+
+### Phase 2 additions
+
 - **Form and parameter discovery** during crawling (`DiscoveredForm`,
   `Endpoint.params`), preserving query parameters across redirects.
 - **Injection-point model** (`isahat.core.injection`): safe, GET-only,

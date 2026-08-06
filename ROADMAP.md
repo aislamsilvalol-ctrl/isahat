@@ -41,13 +41,21 @@ Legend: ✅ done · 🚧 in progress · ⬜ planned
 - ⬜ Boolean/time-based SQLi (opt-in), more injection classes
 - ⬜ PDF reports
 
-## Phase 3 — Desktop application ⬜
+## Phase 3 — Desktop application 🚧
 
-- ⬜ Tauri + React + TypeScript shell over the core (via a local FastAPI bridge)
-- ⬜ Projects, targets, scope, auth import
-- ⬜ Live findings, filters, evidence viewer
-- ⬜ Reports, history, scan comparison
-- ⬜ False-positive / fixed marking, comments
+- ✅ Local FastAPI bridge over the shared engine (`isahat serve`): start scans,
+  live progress (SSE), reports, comparison, health — loopback-only, same scope
+  and sanitisation guarantees as the CLI
+- ✅ Finding review workflow in the core: persistent false-positive / fixed /
+  accepted-risk marking with comments, keyed by stable finding fingerprint so
+  decisions survive re-scans
+- ✅ Tauri + React + TypeScript shell (`apps/desktop`): dashboard with severity
+  totals, audit history, new-audit form with authorisation checklist, live
+  audit view (SSE), findings with filters and sanitized evidence, report
+  export, audit comparison
+- ⬜ Multi-target projects (grouping several authorised targets)
+- ⬜ Native packaging & signed binaries for Windows/macOS/Linux
+- ⬜ UI-level automated tests (Playwright/Vitest)
 
 ## Phase 4 — Intelligence ⬜
 

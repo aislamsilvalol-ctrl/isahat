@@ -163,6 +163,19 @@ class Technology(BaseModel):
     evidence: str | None = None
 
 
+class FindingAnnotation(BaseModel):
+    """A user's review decision about a finding.
+
+    Keyed by the finding fingerprint, which is stable across scans of the same
+    endpoint, so a "false positive" or "fixed" mark survives re-audits.
+    """
+
+    finding_id: str
+    state: FindingState = FindingState.OPEN
+    comment: str | None = None
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class ApiSpec(BaseModel):
     """A discovered API surface.
 

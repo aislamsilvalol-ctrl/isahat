@@ -37,8 +37,9 @@ fix.
 
 ## Highlights
 
-- **One engine, many front-ends.** The CLI (and the planned desktop app) are
-  thin shells over `isahat.core`. No important capability lives in only one UI.
+- **One engine, many front-ends.** The CLI, the desktop app (Tauri + React,
+  `apps/desktop`) and the local bridge API (`isahat serve`) are thin shells
+  over `isahat.core`. No important capability lives in only one UI.
 - **Safe by default.** `safe` profile, per-host rate limiting, mandatory scope
   confirmation, non-destructive checks, and automatic secret masking in evidence.
 - **Severity *and* confidence, kept separate.** A `CRITICAL` finding with
@@ -82,9 +83,21 @@ isahat compare <old-scan-id> <new-scan-id>
 # Environment & detector health
 isahat doctor
 isahat plugins list
+
+# Local bridge for the desktop app / other front-ends
+isahat serve
 ```
 
 The full command reference lives in [docs/CLI.md](docs/CLI.md).
+
+### Desktop app (Phase 3)
+
+A Tauri + React + TypeScript shell over the same engine lives in
+[`apps/desktop`](apps/desktop/) — dashboard, live audit view with streaming
+progress, sanitized evidence, severity filters, finding review
+(fixed/false-positive/accepted-risk), report export and audit comparison. It
+talks to `isahat serve` over loopback; see the
+[desktop README](apps/desktop/README.md) for development setup.
 
 ### Configuration (`isahat.yml`)
 

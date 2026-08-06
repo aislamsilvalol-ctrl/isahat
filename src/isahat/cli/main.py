@@ -441,6 +441,41 @@ def doctor(
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (loopback by default)."),
+    port: int = typer.Option(8741, "--port", "-p", help="Port to listen on."),
+    config_path: Path | None = typer.Option(
+        None, "--config", "-c", help="Path to isahat.yml used as scan defaults."
+    ),
+    db_path: Path | None = typer.Option(None, "--db", help="Override the SQLite database path."),
+) -> None:
+    """Run the local bridge API used by the desktop app (and other front-ends).
+
+    Binds to 127.0.0.1 by default — the bridge is meant for a local GUI, not to
+    be exposed on a network. Scan authorisation is still enforced: the API
+    rejects scans whose payload does not explicitly confirm authorisation.
+    """
+
+    import uvicorn
+
+    from isahat.api import create_app
+
+    console = ui.make_console()
+    app = create_app(db_path, config_path=config_path)
+    console.print(
+        f"[bold]IsaHat bridge[/bold] {__version__} listening on "
+        f"http://{host}:{port} (docs at /docs)"
+    )
+    if host != "127.0.0.1":
+        console.print(
+            "[yellow]Warning:[/yellow] binding the bridge beyond loopback exposes scan "
+            "control to the network. Only do this in a trusted environment."
+        )
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+    _exit(ExitCode.OK)
+
+
+@app.command()
 def version() -> None:
     """Print the IsaHat version."""
 

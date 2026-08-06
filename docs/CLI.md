@@ -133,6 +133,27 @@ isahat plugins install <name>  # external registry: Phase 5
 
 Check the local environment, detectors and storage health.
 
+## `isahat serve`
+
+Run the local bridge API used by the desktop app (and any other front-end):
+
+```bash
+isahat serve                          # 127.0.0.1:8741
+isahat serve --port 9000              # custom port
+isahat serve --config isahat.yml      # scan defaults for bridge-started scans
+```
+
+The bridge binds to **loopback only** by default — never expose it on a
+network. Scans started through the bridge still require explicit authorisation
+confirmation in the request payload; scope enforcement, rate limits and
+evidence sanitisation all remain in the core engine. Interactive OpenAPI docs
+are available at `http://127.0.0.1:8741/docs` while serving.
+
+Endpoints: `GET /health` · `POST /scans` · `GET /scans` · `GET /scans/{id}` ·
+`GET /scans/{id}/status` · `GET /scans/{id}/events` (SSE) ·
+`GET /scans/{id}/report?fmt=` · `POST /scans/{id}/findings/{fid}/annotation` ·
+`GET /compare?base=&head=`.
+
 ## `isahat version`
 
 Print the installed version.

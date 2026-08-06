@@ -52,6 +52,24 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  desktop:
+    name: Desktop UI type-check & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install UI dependencies
+        working-directory: apps/desktop
+        run: npm install --no-audit --no-fund
+      - name: Type-check
+        working-directory: apps/desktop
+        run: npm run typecheck
+      - name: Build UI bundle
+        working-directory: apps/desktop
+        run: npm run build
+
   build:
     name: Build distribution
     runs-on: ubuntu-latest

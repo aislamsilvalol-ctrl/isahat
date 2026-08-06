@@ -9,19 +9,27 @@ No important capability lives in a front-end.
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ Front-ends (thin)                                              │
-│   apps/cli (Typer)  ·  apps/desktop (Tauri, Phase 3)  ·  api   │
-└───────────────┬────────────────────────────────────────────—─┘
-                │ in-process calls (same language) / local API
-┌───────────────▼────────────────────────────────────────────—─┐
+│   apps/cli (Typer)  ·  apps/desktop (Tauri + React + TS)       │
+└───────────────┬───────────────────────┬──────────────────────—─┘
+                │ in-process calls      │ loopback HTTP + SSE
+                │                       │
+┌───────────────▼───────────────────────▼──────────────────────—─┐
+│ bridge (isahat.api, FastAPI)  — 127.0.0.1 only, `isahat serve` │
+│   scans · events · reports · annotations · compare · health    │
+┌───────────────────────────────────────────────────────────────┐
 │ core engine (isahat.core)                                      │
 │   config → scope → http → crawler → tech → detectors → risk    │
 └───────┬───────────────────────────────┬───────────────────────┘
         │                               │
 ┌───────▼────────┐              ┌────────▼─────────┐
 │ storage        │              │ reporting        │
-│ (SQLite)       │              │ (json/md/diff)   │
+│ (SQLite)       │              │ (json/md/html/…) │
 └────────────────┘              └──────────────────┘
 ```
+
+The desktop webview talks to the bridge over `127.0.0.1` with CORS restricted
+to localhost/Tauri origins. All safety enforcement (scope confirmation, rate
+limits, sanitisation) lives below the bridge, so no front-end can bypass it.
 
 ## Package map
 
@@ -37,8 +45,9 @@ No important capability lives in a front-end.
 | `isahat.core.sanitize` | Secret masking (privacy guarantee) |
 | `isahat.core.engine` | Orchestrates the pipeline into a `ScanResult` |
 | `isahat.core.models` | Serialisable data contracts (the internal API) |
-| `isahat.storage` | Local SQLite persistence + history |
-| `isahat.reporting` | JSON / Markdown / comparison output |
+| `isahat.storage` | Local SQLite persistence + history + annotations |
+| `isahat.reporting` | JSON / Markdown / HTML / SARIF / CSV + comparison |
+| `isahat.api` | Loopback FastAPI bridge for front-ends |
 | `isahat.cli` | Presentation + orchestration only |
 
 ## The scan pipeline

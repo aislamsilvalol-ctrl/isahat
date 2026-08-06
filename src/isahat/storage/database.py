@@ -6,15 +6,31 @@ comparison are fast while the complete result is always recoverable.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, TypeVar
 
-from isahat.core.models import ScanResult
+from isahat.core.models import FindingAnnotation, FindingState, ScanResult
 from isahat.core.state import ScanCheckpoint
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _synchronized(method: _F) -> _F:
+    """Serialise a ScanStore method on the instance lock."""
+
+    @functools.wraps(method)
+    def wrapper(self: ScanStore, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper  # type: ignore[return-value]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS scans (
@@ -40,6 +56,12 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     stage     TEXT NOT NULL,
     payload   TEXT NOT NULL,
     saved_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS annotations (
+    finding_id TEXT PRIMARY KEY,
+    state      TEXT NOT NULL,
+    comment    TEXT,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -69,17 +91,27 @@ class ScanSummary:
 
 
 class ScanStore:
-    """A thin repository over a SQLite database of scans."""
+    """A thin repository over a SQLite database of scans.
+
+    The connection is opened with ``check_same_thread=False`` so the bridge API
+    (whose scan jobs finish on asyncio worker threads) can share one store; a
+    re-entrant lock serialises access, which is fine at local-app scale.
+    """
 
     def __init__(self, path: str | Path | None = None) -> None:
+        import threading
+
         self.path = Path(path) if path is not None else default_db_path()
         if self.path.parent and not self.path.parent.exists():
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path))
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        with self._lock:
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
 
+    @_synchronized
     def close(self) -> None:
         self._conn.close()
 
@@ -89,6 +121,7 @@ class ScanStore:
     def __exit__(self, *_exc: object) -> None:
         self.close()
 
+    @_synchronized
     def save(self, result: ScanResult) -> None:
         by_sev = result.stats.by_severity
         self._conn.execute(
@@ -129,6 +162,7 @@ class ScanStore:
         )
         self._conn.commit()
 
+    @_synchronized
     def get(self, scan_id: str) -> ScanResult | None:
         row = self._conn.execute(
             "SELECT payload FROM scans WHERE id = ?", (scan_id,)
@@ -137,6 +171,7 @@ class ScanStore:
             return None
         return ScanResult.model_validate(json.loads(row["payload"]))
 
+    @_synchronized
     def get_latest_for_target(self, target: str) -> ScanResult | None:
         row = self._conn.execute(
             "SELECT payload FROM scans WHERE target = ? ORDER BY started_at DESC LIMIT 1",
@@ -146,6 +181,7 @@ class ScanStore:
             return None
         return ScanResult.model_validate(json.loads(row["payload"]))
 
+    @_synchronized
     def list(self, limit: int = 50) -> list[ScanSummary]:
         rows = self._conn.execute(
             """
@@ -172,6 +208,7 @@ class ScanStore:
             for row in rows
         ]
 
+    @_synchronized
     def delete(self, scan_id: str) -> bool:
         cur = self._conn.execute("DELETE FROM scans WHERE id = ?", (scan_id,))
         self._conn.commit()
@@ -179,6 +216,7 @@ class ScanStore:
 
     # -- checkpoints (scan resume) -----------------------------------------
 
+    @_synchronized
     def save_checkpoint(self, checkpoint: ScanCheckpoint) -> None:
         self._conn.execute(
             """
@@ -200,6 +238,7 @@ class ScanStore:
         )
         self._conn.commit()
 
+    @_synchronized
     def load_checkpoint(self, scan_id: str) -> ScanCheckpoint | None:
         row = self._conn.execute(
             "SELECT payload FROM checkpoints WHERE scan_id = ?", (scan_id,)
@@ -208,6 +247,55 @@ class ScanStore:
             return None
         return ScanCheckpoint.model_validate(json.loads(row["payload"]))
 
+    @_synchronized
     def delete_checkpoint(self, scan_id: str) -> None:
         self._conn.execute("DELETE FROM checkpoints WHERE scan_id = ?", (scan_id,))
         self._conn.commit()
+
+    # -- annotations (finding review state) ---------------------------------
+
+    @_synchronized
+    def set_annotation(self, annotation: FindingAnnotation) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO annotations (finding_id, state, comment, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(finding_id) DO UPDATE SET
+                state=excluded.state,
+                comment=excluded.comment,
+                updated_at=excluded.updated_at
+            """,
+            (
+                annotation.finding_id,
+                annotation.state.value,
+                annotation.comment,
+                annotation.updated_at.isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    @_synchronized
+    def get_annotations(self) -> dict[str, FindingAnnotation]:
+        rows = self._conn.execute(
+            "SELECT finding_id, state, comment, updated_at FROM annotations"
+        ).fetchall()
+        return {
+            row["finding_id"]: FindingAnnotation(
+                finding_id=row["finding_id"],
+                state=FindingState(row["state"]),
+                comment=row["comment"],
+                updated_at=datetime.fromisoformat(row["updated_at"]),
+            )
+            for row in rows
+        }
+
+    @_synchronized
+    def apply_annotations(self, result: ScanResult) -> ScanResult:
+        """Overlay stored review state onto a scan's findings."""
+
+        annotations = self.get_annotations()
+        for finding in result.findings:
+            annotation = annotations.get(finding.id)
+            if annotation is not None:
+                finding.state = annotation.state
+        return result

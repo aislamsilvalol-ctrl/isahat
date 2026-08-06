@@ -104,7 +104,25 @@ print(diff_to_markdown(diff))
 
 See [PLUGINS.md](PLUGINS.md) and `isahat.core.detectors.base.Detector`.
 
-## A note on the future HTTP API
+## The local bridge API (HTTP)
 
-Phase 3 introduces a local FastAPI bridge so the desktop app (and third parties)
-can drive the engine over HTTP. It will mirror this in-process API 1:1.
+Since Phase 3, the engine is also reachable over loopback HTTP for front-ends
+(desktop app, future web UI). Start it with `isahat serve`; the application
+factory is `isahat.api.create_app(db_path, config_path=...)`, which is fully
+covered by `tests/unit/test_api_bridge.py`.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Liveness + engine version. |
+| `POST /scans` | Start a scan. Body: `target`, `profile`, `scan_type`, optional `auth`, `rate_limit_check`, and **required** `confirmed: true` (the client must show the authorisation banner first). Returns `202` + `scan_id`. |
+| `GET /scans` | Scan history (newest first), with `running` flags. |
+| `GET /scans/{id}` | Full `ScanResult` JSON with stored review annotations applied. |
+| `GET /scans/{id}/status` | `running`/`done`/`error` plus the progress event buffer. |
+| `GET /scans/{id}/events` | SSE stream of progress events; ends with a terminal `done`/`error` event. |
+| `GET /scans/{id}/report?fmt=` | Rendered report download (`json`, `markdown`, `html`, `csv`, `sarif`). |
+| `POST /scans/{id}/findings/{fid}/annotation` | Set review state (`fixed`, `false_positive`, `accepted_risk`, `open`) + optional comment. |
+| `GET /compare?base=&head=` | Finding-id diff (new/resolved/unchanged) + markdown summary. |
+
+Safety notes: the bridge is loopback-only by default; CORS is restricted to
+localhost and Tauri origins; scope enforcement, rate limiting and evidence
+sanitisation all happen inside the core, so no HTTP client can bypass them.

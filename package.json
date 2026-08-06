@@ -2,19 +2,19 @@
   "name": "isahat-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "IsaHat — Open Source AI Security Auditor. This root manifest declares the JavaScript/TypeScript workspaces used by front-ends in later phases (e.g. the Tauri desktop app). The Phase 1 engine and CLI are Python; see pyproject.toml.",
+  "description": "IsaHat — Open Source AI Security Auditor. This root manifest declares the JavaScript/TypeScript workspaces (the Tauri desktop app). The engine, CLI and bridge API are Python; see pyproject.toml.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/isahat/isahat.git"
   },
   "workspaces": [
-    "apps/desktop",
-    "packages/ui",
-    "packages/sdk"
+    "apps/desktop"
   ],
   "scripts": {
-    "note": "Front-end tooling arrives in Phase 3 (desktop). For the engine and CLI, use the Python toolchain: see docs/DEVELOPMENT.md."
+    "desktop:dev": "npm --workspace apps/desktop run dev",
+    "desktop:build": "npm --workspace apps/desktop run build",
+    "desktop:typecheck": "npm --workspace apps/desktop run typecheck"
   },
   "engines": {
     "node": ">=20"
