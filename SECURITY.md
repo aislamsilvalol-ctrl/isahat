@@ -7,7 +7,7 @@ tool itself, please report it privately.
 
 - **Preferred:** open a [GitHub Security Advisory](https://github.com/aislamsilvalol-ctrl/isahat/security/advisories/new)
   (private, coordinated disclosure).
-- **Alternative:** email `security@isahat.dev` with details.
+- **Alternative:** email `contact@aislam.dev`.
 
 Please **do not** open a public issue for security vulnerabilities.
 
