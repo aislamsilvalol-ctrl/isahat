@@ -9,6 +9,11 @@ import typer
 from rich.console import Console
 
 from isahat import __version__
+from isahat.api.token import (
+    BridgeTokenError,
+    bridge_token_path,
+    non_loopback_warning,
+)
 from isahat.cli import console as ui
 from isahat.cli.exit_codes import ExitCode
 from isahat.core.auth import AuthConfig, load_auth
@@ -28,6 +33,8 @@ app = typer.Typer(
 )
 plugins_app = typer.Typer(help="Manage and inspect detection plugins.")
 app.add_typer(plugins_app, name="plugins")
+bridge_app = typer.Typer(help="Local bridge token. The token value is never printed.")
+app.add_typer(bridge_app, name="bridge")
 
 _SEVERITY_CHOICES = "critical|high|medium|low|info"
 
@@ -443,6 +450,37 @@ def doctor(
     _exit(ExitCode.OK if all_ok else ExitCode.ERROR)
 
 
+@bridge_app.command("token")
+def bridge_token(
+    show_path: bool = typer.Option(
+        False,
+        "--path",
+        help="Print the bridge token file path. The token value is never printed.",
+    ),
+    db_path: Path | None = typer.Option(
+        None, "--db", help="Same database override as `isahat serve --db`."
+    ),
+) -> None:
+    """Show where the bridge token file is. Does not print the token."""
+
+    console = ui.make_console()
+    location = bridge_token_path(db_path)
+    if show_path:
+        console.print(str(location), highlight=False)
+    else:
+        console.print(
+            "Token value is not shown. Pass --path to print the file location.",
+            highlight=False,
+        )
+    if location.is_file():
+        console.print("[dim]Token value is not shown.[/dim]")
+    else:
+        console.print(
+            "[dim]Not created yet. The first `isahat serve` writes this file with mode 0600.[/dim]"
+        )
+    _exit(ExitCode.OK)
+
+
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address (loopback by default)."),
@@ -464,17 +502,23 @@ def serve(
     from isahat.api import create_app
 
     console = ui.make_console()
-    app = create_app(db_path, config_path=config_path)
+    token_path = bridge_token_path(db_path)
+    try:
+        bridge = create_app(db_path, config_path=config_path)
+    except BridgeTokenError as exc:
+        console.print(f"[red]{exc}[/red]")
+        _exit(ExitCode.ERROR)
     console.print(
         f"[bold]IsaHat bridge[/bold] {__version__} listening on "
         f"http://{host}:{port} (docs at /docs)"
     )
-    if host != "127.0.0.1":
-        console.print(
-            "[yellow]Warning:[/yellow] binding the bridge beyond loopback exposes scan "
-            "control to the network. Only do this in a trusted environment."
-        )
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    console.print(f"Bridge token file: {token_path}", highlight=False)
+    warning = non_loopback_warning(host)
+    if warning is not None:
+        console.print(f"[yellow]Warning:[/yellow] {warning}")
+    # No access log: the SSE route may carry ?token=, and that query must not
+    # be written. The token value is never printed; only the file path is.
+    uvicorn.run(bridge, host=host, port=port, log_level="warning", access_log=False)
     _exit(ExitCode.OK)
 
 

@@ -8,6 +8,10 @@ Design notes:
 * **Loopback-only by default.** ``isahat serve`` binds to 127.0.0.1 and scans
   still require explicit scope confirmation server-side (the desktop app sends
   ``confirmed: true`` after showing the same authorisation banner as the CLI).
+* **Local bearer token.** Every route except ``GET /health`` requires
+  ``Authorization: Bearer`` matching the mode-0600 token file. The SSE route
+  also accepts that token as a query parameter because ``EventSource`` cannot
+  set headers. The query value is never logged.
 * **Live progress.** Scans run as asyncio tasks; progress events are buffered
   per scan and streamed to clients over SSE (``/scans/{id}/events``).
 """
@@ -15,18 +19,21 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from isahat import __version__
+from isahat.api.token import bridge_token_path, load_or_create_bridge_token
 from isahat.core.auth import AuthConfig
 from isahat.core.config import load_config
 from isahat.core.engine import ScanEngine
@@ -87,6 +94,75 @@ class _ScanJob:
             self.condition.notify_all()
 
 
+def _unauthorized() -> JSONResponse:
+    """Same body for a missing token and a wrong token. No hints."""
+
+    return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+
+def _bearer_token(header: str | None) -> str | None:
+    if not header:
+        return None
+    scheme, _, value = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    token = value.strip()
+    return token or None
+
+
+def _presented_token(request: Request) -> str | None:
+    """Header on every route; query token only on the SSE events route.
+
+    ``EventSource`` cannot set ``Authorization``. The query value is read here
+    and is not written to a log.
+    """
+
+    header_token = _bearer_token(request.headers.get("authorization"))
+    if header_token is not None:
+        return header_token
+    path = request.url.path
+    if request.method == "GET" and path.startswith("/scans/") and path.endswith("/events"):
+        query_token = request.query_params.get("token")
+        if query_token:
+            return query_token
+    return None
+
+
+def _token_matches(presented: str, expected: str) -> bool:
+    try:
+        return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
+    except (TypeError, ValueError):
+        return False
+
+
+class _BridgeTokenMiddleware:
+    """Reject requests that do not present the local bridge token.
+
+    Raw ASGI, not ``BaseHTTPMiddleware``, so the SSE stream is not buffered.
+    """
+
+    def __init__(self, app: ASGIApp, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        method = scope.get("method", "")
+        path = scope.get("path", "")
+        # Preflight does not send Authorization. GET /health is the only
+        # unauthenticated data-free probe.
+        if method == "OPTIONS" or (method == "GET" and path == "/health"):
+            await self.app(scope, receive, send)
+            return
+        presented = _presented_token(Request(scope))
+        if presented is None or not _token_matches(presented, self.token):
+            await _unauthorized()(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def create_app(
     db_path: str | Path | None = None,
     *,
@@ -94,7 +170,11 @@ def create_app(
 ) -> FastAPI:
     """Build the bridge application. ``db_path`` is injectable for tests."""
 
+    expected_token = load_or_create_bridge_token(bridge_token_path(db_path))
     app = FastAPI(title="IsaHat Bridge", version=__version__)
+    # Auth is added first so CORS stays outside it. A 401 then still carries
+    # the allow-origin header the webview needs to read the response.
+    app.add_middleware(_BridgeTokenMiddleware, token=expected_token)
     # The desktop webview (Tauri) calls the bridge cross-origin. Only the
     # local app origins are allowed — the bridge is loopback-only anyway.
     app.add_middleware(
@@ -103,6 +183,7 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
     store = ScanStore(db_path)
     base_config = load_config(config_path)
     jobs: dict[str, _ScanJob] = {}

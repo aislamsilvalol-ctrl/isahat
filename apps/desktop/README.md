@@ -30,6 +30,10 @@ every capability available in the app is exactly the CLI's capability. See
 Safety properties are enforced server-side, so the UI cannot bypass them: the
 bridge rejects scans without an explicit `confirmed: true`, the scope guard and
 rate limits live in the core, and secrets are masked before leaving the engine.
+The bridge also requires a local bearer token (`bridge.token`, mode 0600). The
+UI does not ship a token: in development the Vite proxy reads the file and
+attaches the header; a packaged Tauri build asks the shell to read the same
+file. `GET /health` stays unauthenticated so the offline banner still works.
 
 ## Running (development)
 

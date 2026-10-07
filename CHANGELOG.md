@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The local bridge requires a bearer token. The first `isahat serve` writes
+  `bridge.token` (mode 0600) next to the SQLite database and reuses it. A file
+  that group or other users can access is refused instead of being chmod'd,
+  because the secret may already have been read. `GET /health` stays open.
+  `isahat bridge token --path` prints the file path and never the token value.
+  The desktop reads that file itself (Vite dev proxy, or the Tauri shell in a
+  packaged build) and does not embed the token.
 - A finished scan saves its result and removes the checkpoint in one SQLite
   transaction. A detector that raises is not marked complete, so resume runs
   it again.

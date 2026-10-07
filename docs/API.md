@@ -123,6 +123,11 @@ covered by `tests/unit/test_api_bridge.py`.
 | `POST /scans/{id}/findings/{fid}/annotation` | Set review state (`fixed`, `false_positive`, `accepted_risk`, `open`) + optional comment. |
 | `GET /compare?base=&head=` | Finding-id diff (new/resolved/unchanged) + markdown summary. |
 
-Safety notes: the bridge is loopback-only by default; CORS is restricted to
-localhost and Tauri origins; scope enforcement, rate limiting and evidence
-sanitisation all happen inside the core, so no HTTP client can bypass them.
+Safety notes: the bridge is loopback-only by default. CORS is restricted to
+localhost and Tauri origins and is not authentication. Every route except
+`GET /health` requires `Authorization: Bearer` matching `bridge.token` (mode
+0600, next to the database). The value is compared with `hmac.compare_digest`.
+A missing or wrong token is `401` with the same body. `GET /scans/{id}/events`
+also accepts `?token=` for `EventSource`; that query is not logged and does not
+authenticate any other route. Scope enforcement, rate limiting and evidence
+sanitisation still happen inside the core.
