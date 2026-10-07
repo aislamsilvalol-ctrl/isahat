@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A finished scan saves its result and removes the checkpoint in one SQLite
+  transaction. A detector that raises is not marked complete, so resume runs
+  it again.
+
 ### Added
 
 - **Local bridge API** (`isahat serve`, `isahat.api`): a loopback-only FastAPI

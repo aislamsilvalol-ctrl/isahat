@@ -252,7 +252,10 @@ def scan(
         result.recompute_stats()
 
     if store is not None:
-        store.save(result)
+        # The engine already stored the full result and removed the checkpoint
+        # in one transaction. Persist again only when --severity filtered it.
+        if min_severity is not None:
+            store.save(result)
         store.close()
 
     if not quiet:

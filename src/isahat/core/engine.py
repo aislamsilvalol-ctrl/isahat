@@ -182,7 +182,9 @@ class ScanEngine:
         result.finished_at = datetime.now(UTC)
         result.recompute_stats()
         if self._checkpoints is not None:
-            self._checkpoints.delete_checkpoint(self.scan_id)
+            # One commit covers the result and the checkpoint delete. If it
+            # fails, the checkpoint is still there and the error propagates.
+            self._checkpoints.finalize_scan(result)
         self._emit("done", f"{len(result.findings)} findings")
         return result
 
@@ -224,10 +226,13 @@ class ScanEngine:
                 result.findings.extend(await detector.run(ctx))
             except Exception as exc:  # noqa: BLE001 - one detector must not fail the scan
                 self._emit("error", f"detector {detector.name} failed: {exc}")
-            if checkpoint is not None:
-                checkpoint.completed_detectors.append(detector.name)
-                checkpoint.findings = list(result.findings)
-                self._save_checkpoint(checkpoint)
+            else:
+                # Only a detector that returned is finished. A later resume
+                # must run one that raised, so its name stays off this list.
+                if checkpoint is not None:
+                    checkpoint.completed_detectors.append(detector.name)
+                    checkpoint.findings = list(result.findings)
+                    self._save_checkpoint(checkpoint)
 
     def scan(self) -> ScanResult:
         """Blocking wrapper around :meth:`run` for synchronous callers."""

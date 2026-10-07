@@ -132,8 +132,9 @@ class ScanStore:
     def __exit__(self, *_exc: object) -> None:
         self.close()
 
-    @_synchronized
-    def save(self, result: ScanResult) -> None:
+    def _upsert_scan(self, result: ScanResult) -> None:
+        """Insert or update a scan row. Caller holds the lock and commits."""
+
         by_sev = result.stats.by_severity
         self._conn.execute(
             """
@@ -171,7 +172,30 @@ class ScanStore:
                 result.model_dump_json(),
             ),
         )
+
+    @_synchronized
+    def save(self, result: ScanResult) -> None:
+        self._upsert_scan(result)
         self._conn.commit()
+
+    @_synchronized
+    def finalize_scan(self, result: ScanResult) -> None:
+        """Persist a finished scan and drop its checkpoint in one transaction.
+
+        A crash before ``commit`` rolls both statements back, so the caller
+        still has either the stored result or the checkpoint to resume from.
+        """
+
+        try:
+            self._upsert_scan(result)
+            self._conn.execute(
+                "DELETE FROM checkpoints WHERE scan_id = ?",
+                (result.id,),
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 - any failure must undo both statements
+            self._conn.rollback()
+            raise
 
     @_synchronized
     def get(self, scan_id: str) -> ScanResult | None:
