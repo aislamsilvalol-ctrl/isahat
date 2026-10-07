@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A finished scan saves its result and removes the checkpoint in one SQLite
   transaction. A detector that raises is not marked complete, so resume runs
   it again.
+- Checkpoints redact `Authorization`, `Cookie`, `Set-Cookie` secrets,
+  `Proxy-Authorization` and API-key style headers. Response bodies are stored
+  as a hash, a size and a masked capped copy, which is what resume reads.
 
 ### Added
 
