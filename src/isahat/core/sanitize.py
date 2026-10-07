@@ -53,16 +53,49 @@ def mask_value(value: str) -> str:
     return masked
 
 
+def _is_sensitive_header(name: str) -> bool:
+    """True for auth, cookie and API-key style header names."""
+
+    lowered = name.lower()
+    if lowered in _SENSITIVE_HEADERS:
+        return True
+    compact = lowered.replace("-", "").replace("_", "")
+    return "apikey" in compact
+
+
 def mask_headers(headers: dict[str, str]) -> dict[str, str]:
     """Return a copy of ``headers`` with sensitive values redacted."""
 
     result: dict[str, str] = {}
     for name, value in headers.items():
-        if name.lower() in _SENSITIVE_HEADERS:
+        if _is_sensitive_header(name):
             result[name] = _MASK
         else:
             result[name] = mask_value(value)
     return result
+
+
+# Cookie attributes resume still needs. The secret is the name=value pair.
+_SET_COOKIE_ATTRS = frozenset(
+    {"path", "domain", "expires", "max-age", "samesite", "version", "comment", "priority"}
+)
+
+
+def redact_set_cookie(value: str) -> str:
+    """Redact cookie values and keep names plus attribute flags.
+
+    The cookie detector and technology fingerprints read ``Set-Cookie`` again
+    on resume. They need the name, ``Secure``, ``HttpOnly`` and ``SameSite``,
+    not the secret stored in the cookie.
+    """
+
+    def _repl(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name.lower() in _SET_COOKIE_ATTRS:
+            return match.group(0)
+        return f"{name}={_MASK}"
+
+    return re.sub(r"([^=;\s]+)=([^;]*)", _repl, value)
 
 
 def format_headers(headers: dict[str, str]) -> str:

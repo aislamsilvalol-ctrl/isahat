@@ -242,3 +242,85 @@ def test_raising_detector_is_not_completed_and_resume_reruns_it(tmp_path):
         assert result.id == scan_id
         assert store.get(scan_id) is not None
         assert store.load_checkpoint(scan_id) is None
+
+
+async def test_persisted_checkpoint_has_no_auth_material(tmp_path):
+    """SQLite checkpoint payload must not contain auth headers or raw secrets."""
+
+    import hashlib
+
+    from isahat.core.detectors.cookies import CookieSecurityDetector
+    from isahat.core.detectors.sensitive_data import SensitiveDataExposureDetector
+    from isahat.core.http import HttpResponse
+
+    secret = "super-secret-token"
+    body = '{"password": "' + secret + '", "user": "ada"}'
+    response = HttpResponse(
+        url=TARGET + "/api",
+        status=200,
+        headers={
+            "Content-Type": "application/json",
+            "Set-Cookie": f"session={secret}; Secure; SameSite=Lax; Path=/",
+        },
+        text=body,
+        elapsed_ms=1.0,
+        request_method="GET",
+        request_headers={
+            "Authorization": f"Bearer {secret}",
+            "Cookie": f"session={secret}",
+            "Proxy-Authorization": f"Basic {secret}",
+            "X-Api-Key": secret,
+            "Accept": "application/json",
+        },
+    )
+    db = tmp_path / "isahat.db"
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="sec1",
+                target=TARGET,
+                stage="detectors",
+                responses=[ResponseSnapshot.from_response(response)],
+            )
+        )
+    raw = sqlite3.connect(db).execute(
+        "SELECT payload FROM checkpoints WHERE scan_id = ?", ("sec1",)
+    ).fetchone()[0]
+    assert isinstance(raw, str)
+    assert secret not in raw
+
+    loaded = ScanCheckpoint.model_validate_json(raw)
+    snap = loaded.responses[0]
+    assert snap.request_headers["authorization"] == "***REDACTED***"
+    assert snap.request_headers["cookie"] == "***REDACTED***"
+    assert snap.request_headers["proxy-authorization"] == "***REDACTED***"
+    assert snap.request_headers["x-api-key"] == "***REDACTED***"
+    assert snap.request_headers["accept"] == "application/json"
+    assert secret not in snap.headers["set-cookie"]
+    assert "SameSite=Lax" in snap.headers["set-cookie"]
+    assert "session=" in snap.headers["set-cookie"]
+    assert "password" in snap.text
+    assert secret not in snap.text
+    assert snap.body_size == len(body.encode())
+    assert snap.body_sha256 == hashlib.sha256(body.encode()).hexdigest()
+
+    restored = snap.to_response()
+    scope = make_scope(TARGET)
+    ctx = DetectorContext(
+        target=TARGET,
+        scope=scope,
+        client=FakeClient(scope, {}),
+        responses=[restored],
+    )
+    cookies = await CookieSecurityDetector().run(ctx)
+    assert any("session" in finding.title for finding in cookies)
+    exposed = await SensitiveDataExposureDetector().run(ctx)
+    assert exposed
+
+
+def test_checkpoint_body_is_capped(tmp_path):
+    raw_body = "a" * 250_000
+    snapshot = ResponseSnapshot.from_response(make_response(TARGET + "/", text=raw_body))
+    assert len(snapshot.text) == 200_000
+    assert snapshot.body_size == 250_000
+    assert raw_body not in snapshot.model_dump_json()

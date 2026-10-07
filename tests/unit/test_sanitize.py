@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from isahat.core.sanitize import format_headers, mask_headers, mask_value, truncate
+from isahat.core.sanitize import (
+    format_headers,
+    mask_headers,
+    mask_value,
+    redact_set_cookie,
+    truncate,
+)
 
 
 def test_mask_bearer_token():
@@ -34,6 +40,24 @@ def test_mask_headers_redacts_sensitive():
     assert masked["Authorization"] == "***REDACTED***"
     assert masked["Cookie"] == "***REDACTED***"
     assert masked["Accept"] == "text/html"
+
+
+def test_mask_headers_redacts_api_key_style_names():
+    masked = mask_headers({"X-Api-Key": "sekret", "Api_Key": "sekret2", "Accept": "text/plain"})
+    assert masked["X-Api-Key"] == "***REDACTED***"
+    assert masked["Api_Key"] == "***REDACTED***"
+    assert masked["Accept"] == "text/plain"
+    assert "sekret" not in "".join(masked.values())
+
+
+def test_redact_set_cookie_keeps_flags():
+    raw = "session=super-secret-token; HttpOnly; Secure; SameSite=Lax; Path=/"
+    redacted = redact_set_cookie(raw)
+    assert "super-secret-token" not in redacted
+    assert "session=***REDACTED***" in redacted
+    assert "HttpOnly" in redacted
+    assert "SameSite=Lax" in redacted
+    assert "Path=/" in redacted
 
 
 def test_format_headers_is_string():
