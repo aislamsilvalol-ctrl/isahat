@@ -129,13 +129,13 @@ def create_app(
             scan_id=job.scan_id,
         )
         try:
+            # ``run`` persists the result and deletes the checkpoint together.
             result = await engine.run()
         except ScopeViolation as exc:
             job.status, job.detail = "error", f"scope: {exc}"
         except Exception as exc:  # noqa: BLE001 - surface as job status, not a crash
             job.status, job.detail = "error", str(exc)
         else:
-            store.save(result)
             job.status, job.detail = "done", result.id
         async with job.condition:
             job.condition.notify_all()

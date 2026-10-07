@@ -3,7 +3,8 @@
 The engine saves a checkpoint after each stage (crawl, API discovery, each
 detector). If a scan is interrupted, ``isahat scan --resume <scan-id>`` reloads
 the checkpoint and continues from the first unfinished stage instead of
-starting over. Completed scans delete their checkpoint.
+starting over. A finished scan writes the ``ScanResult`` and deletes the
+checkpoint in one store transaction.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field
 
 from isahat.core.http import HttpResponse
-from isahat.core.models import ApiSpec, DiscoveredForm, Endpoint, Finding
+from isahat.core.models import ApiSpec, DiscoveredForm, Endpoint, Finding, ScanResult
 
 # Stage progression: crawl -> apis -> detectors -> done.
 STAGE_CRAWL = "crawl"
@@ -79,3 +80,7 @@ class CheckpointStore(Protocol):
     def load_checkpoint(self, scan_id: str) -> ScanCheckpoint | None: ...
 
     def delete_checkpoint(self, scan_id: str) -> None: ...
+
+    def finalize_scan(self, result: ScanResult) -> None:
+        """Store ``result`` and delete its checkpoint in a single transaction."""
+        ...
