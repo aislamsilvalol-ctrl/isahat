@@ -113,18 +113,44 @@ export interface AuthConfig {
   cookies?: Record<string, string>;
 }
 
-// Inside the Tauri webview there is no dev proxy, so we call the bridge
-// directly; in the browser dev server, /api is proxied by Vite. The bridge
-// only ever listens on loopback.
-const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
-const BASE =
-  import.meta.env?.VITE_BRIDGE_URL ?? (isTauri ? "http://127.0.0.1:8741" : "/api");
+// Browser dev and `tauri dev` load the Vite server, which proxies `/api` and
+// attaches the bridge token from the mode-0600 file. The production webview
+// has no proxy: it calls loopback directly and asks the Tauri process for the
+// token. The token is never compiled into the bundle.
+// Tauri 2 sets `window.isTauri` and `__TAURI_INTERNALS__`. `__TAURI__` exists
+// only when `withGlobalTauri` is on. Any of them means this page is the shell.
+const isTauri =
+  typeof window !== "undefined" &&
+  ("isTauri" in window || "__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+const useDirect =
+  Boolean(import.meta.env?.VITE_BRIDGE_URL) || (import.meta.env.PROD && isTauri);
+const BASE = useDirect
+  ? (import.meta.env?.VITE_BRIDGE_URL ?? "http://127.0.0.1:8741")
+  : "/api";
+
+let bridgeToken: string | null = null;
+
+export async function initBridgeAuth(): Promise<void> {
+  if (!useDirect || !isTauri) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const token = await invoke<string>("bridge_token");
+    bridgeToken = token.trim() || null;
+  } catch {
+    bridgeToken = null;
+  }
+}
+
+function withAuth(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  if (bridgeToken) headers.set("Authorization", `Bearer ${bridgeToken}`);
+  return { ...init, headers };
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  const headers = new Headers(withAuth(init).headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const response = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     try {
@@ -186,9 +212,34 @@ export const api = {
       { method: "POST" },
     ),
 
-  reportUrl: (scanId: string, fmt: string) =>
-    `${BASE}/scans/${encodeURIComponent(scanId)}/report?fmt=${encodeURIComponent(fmt)}`,
+  /** Fetch a report with the bridge token and save it. Anchors cannot set headers. */
+  downloadReport: async (scanId: string, fmt: string): Promise<void> => {
+    const response = await fetch(
+      `${BASE}/scans/${encodeURIComponent(scanId)}/report?fmt=${encodeURIComponent(fmt)}`,
+      withAuth(),
+    );
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    const extension = fmt === "markdown" ? "md" : fmt;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `isahat-${scanId}.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
 
-  /** Server-sent events stream of scan progress; caller must close it. */
-  eventsUrl: (scanId: string) => `${BASE}/scans/${encodeURIComponent(scanId)}/events`,
+  /**
+   * Server-sent events stream of scan progress; caller must close it.
+   * EventSource cannot set headers, so the production webview puts the token
+   * in the query string. The dev proxy adds the header instead, and the query
+   * is left empty.
+   */
+  eventsUrl: (scanId: string) => {
+    const path = `${BASE}/scans/${encodeURIComponent(scanId)}/events`;
+    if (!bridgeToken) return path;
+    return `${path}?token=${encodeURIComponent(bridgeToken)}`;
+  },
 };

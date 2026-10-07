@@ -338,14 +338,18 @@ export default function ScanDetail(): JSX.Element {
         {scan && (
           <div style={{ display: "flex", gap: 8 }}>
             {(["html", "markdown", "json"] as const).map((fmt) => (
-              <a
+              <button
                 key={fmt}
+                type="button"
                 className="button secondary"
-                href={api.reportUrl(scan.id, fmt)}
-                download
+                onClick={() => {
+                  void api.downloadReport(scan.id, fmt).catch((err: Error) => {
+                    setRunError(err.message);
+                  });
+                }}
               >
                 ↓ {fmt}
-              </a>
+              </button>
             ))}
           </div>
         )}

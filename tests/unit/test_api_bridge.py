@@ -15,7 +15,9 @@ from isahat.storage import ScanStore
 @pytest.fixture()
 def client(tmp_path):
     app = create_app(tmp_path / "isahat.db")
+    token = (tmp_path / "bridge.token").read_text(encoding="utf-8").strip()
     with TestClient(app) as test_client:
+        test_client.headers["Authorization"] = f"Bearer {token}"
         yield test_client
 
 

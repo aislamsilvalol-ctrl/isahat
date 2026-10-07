@@ -143,11 +143,30 @@ isahat serve --port 9000              # custom port
 isahat serve --config isahat.yml      # scan defaults for bridge-started scans
 ```
 
-The bridge binds to **loopback only** by default — never expose it on a
-network. Scans started through the bridge still require explicit authorisation
-confirmation in the request payload; scope enforcement, rate limits and
-evidence sanitisation all remain in the core engine. Interactive OpenAPI docs
-are available at `http://127.0.0.1:8741/docs` while serving.
+The bridge binds to **loopback only** by default. `--host` may bind elsewhere,
+but the process prints a warning and still does not print the token. Every
+route except `GET /health` requires `Authorization: Bearer <token>`. The token
+is created on first start as `bridge.token` (mode 0600) beside the database
+(`$ISAHAT_HOME` or `~/.isahat`). If that file is readable by group or others,
+`isahat serve` refuses to start: delete it to mint a new token, or `chmod 0600`
+the path if you accept the existing secret. The mode is not tightened silently.
+
+```bash
+isahat bridge token --path    # prints the file path, never the token value
+isahat bridge token --path --db /path/to/isahat.db
+```
+
+The desktop app reads this file itself from `$ISAHAT_HOME` or `~/.isahat`
+(the default database directory). A custom `--db` stores the token beside that
+file, so keep the database in the data directory the desktop reads, or set
+`ISAHAT_HOME` to the directory that contains both files. For `curl`, read the
+file and send the header; do not expect the CLI to echo the secret. The SSE route
+(`/scans/{id}/events`) also accepts `?token=` because browser `EventSource`
+cannot set headers. Other routes ignore that query parameter. Scans started
+through the bridge still require explicit authorisation confirmation in the
+request payload; scope enforcement, rate limits and evidence sanitisation all
+remain in the core engine. Interactive OpenAPI docs are available at
+`http://127.0.0.1:8741/docs` while serving (the docs routes require the token).
 
 Endpoints: `GET /health` · `POST /scans` · `GET /scans` · `GET /scans/{id}` ·
 `GET /scans/{id}/status` · `GET /scans/{id}/events` (SSE) ·

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Main window. May read the local bridge token file via bridge_token.",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-bridge-token"]
+}
