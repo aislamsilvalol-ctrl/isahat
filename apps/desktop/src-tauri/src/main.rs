@@ -24,12 +24,8 @@ fn data_dir() -> Result<PathBuf, String> {
 #[tauri::command]
 fn bridge_token() -> Result<String, String> {
     let path = data_dir()?.join("bridge.token");
-    let text = std::fs::read_to_string(&path).map_err(|_| {
-        format!(
-            "bridge token file is not readable: {}",
-            path.display()
-        )
-    })?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|_| format!("bridge token file is not readable: {}", path.display()))?;
     let token = text.trim();
     if token.is_empty() {
         return Err(format!("bridge token file is empty: {}", path.display()));
