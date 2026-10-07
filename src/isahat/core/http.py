@@ -6,7 +6,9 @@ Every outbound request goes through :class:`SafeHttpClient`, which:
 * throttles requests per host to the configured rate limit;
 * only issues non-destructive methods unless destructive tests are explicitly
   enabled (which the MVP never does);
-* identifies itself honestly via the ``User-Agent`` (no evasion).
+* identifies itself honestly via the ``User-Agent`` (no evasion);
+* follows redirects itself and checks every hop against the scope, so an
+  out-of-scope ``Location`` is never requested.
 """
 
 from __future__ import annotations
@@ -25,6 +27,72 @@ USER_AGENT = f"IsaHat/{__version__} (+https://github.com/aislamsilvalol-ctrl/isa
 
 # Methods considered non-destructive and therefore always allowed.
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Status codes httpx follows. 300 is left alone, matching that client.
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_REDIRECTS = 20
+_AUTH_HEADER_NAMES = frozenset({"authorization", "proxy-authorization"})
+
+
+def _origin(url: str) -> tuple[str, str, int]:
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if parsed.port is not None:
+        port = parsed.port
+    elif scheme == "https":
+        port = 443
+    elif scheme == "http":
+        port = 80
+    else:
+        port = 0
+    return scheme, host, port
+
+
+def _same_origin(left: str, right: str) -> bool:
+    return _origin(left) == _origin(right)
+
+
+def _is_https_upgrade(src: str, dst: str) -> bool:
+    """True for http://host -> https://host on the default ports.
+
+    httpx keeps ``Authorization`` across that one upgrade and strips it on
+    every other origin change. The manual redirect loop does the same.
+    """
+
+    src_origin, dst_origin = _origin(src), _origin(dst)
+    return (
+        src_origin[1] == dst_origin[1]
+        and src_origin[0] == "http"
+        and src_origin[2] == 80
+        and dst_origin[0] == "https"
+        and dst_origin[2] == 443
+    )
+
+
+def _redirect_method(method: str, status: int) -> str:
+    if status in (302, 303) and method != "HEAD":
+        return "GET"
+    if status == 301 and method == "POST":
+        return "GET"
+    return method
+
+
+def _resolve_redirect(current: str, location: str) -> str:
+    """Resolve a ``Location`` the same way httpx does, without requesting it."""
+
+    try:
+        url = httpx.URL(location)
+    except httpx.InvalidURL:
+        return location
+    base = httpx.URL(current)
+    if url.scheme and not url.host:
+        url = url.copy_with(host=base.host)
+    if url.is_relative_url:
+        url = base.join(url)
+    if base.fragment and not url.fragment:
+        url = url.copy_with(fragment=base.fragment)
+    return str(url)
 
 
 @dataclass
@@ -90,16 +158,22 @@ class SafeHttpClient:
     ) -> None:
         self._scope = scope
         self._destructive = destructive
+        self._follow_redirects = follow_redirects
+        self._auth_headers = dict(auth_headers or {})
         self._limiter = _HostRateLimiter(rate_limit)
         self._semaphore = asyncio.Semaphore(max(1, concurrency))
-        headers = {"User-Agent": USER_AGENT}
-        if auth_headers:
-            headers.update(auth_headers)
+        # Auth cookies are bound to allowed hosts so a redirect cannot carry
+        # them to some other domain. httpx follows redirects itself only when
+        # we ask; we never do — each hop is checked below.
+        jar = httpx.Cookies()
+        for host in scope.allowed_hosts:
+            for name, value in (cookies or {}).items():
+                jar.set(name, value, domain=host, path="/")
         self._client = httpx.AsyncClient(
             timeout=timeout,
-            follow_redirects=follow_redirects,
-            headers=headers,
-            cookies=cookies or None,
+            follow_redirects=False,
+            headers={"User-Agent": USER_AGENT},
+            cookies=jar,
         )
         self.requests_made = 0
 
@@ -133,22 +207,19 @@ class SafeHttpClient:
         for CORS checks). ``follow_redirects`` overrides the client default for a
         single request — detectors that inspect ``Location`` (open redirect) pass
         ``False`` so the redirect is observed rather than followed.
+
+        When following, each ``Location`` is checked with the scope before the
+        next request. An out-of-scope hop is not sent; the redirect response
+        already received is returned instead.
         """
 
         self._scope.require(url)
         self._check_method(method)
-        host = urlparse(url).hostname or ""
-        kwargs: dict[str, object] = {}
-        if headers:
-            kwargs["headers"] = headers
-        if follow_redirects is not None:
-            kwargs["follow_redirects"] = follow_redirects
+        follow = self._follow_redirects if follow_redirects is None else follow_redirects
         async with self._semaphore:
-            await self._limiter.acquire(host)
             started = time.perf_counter()
-            response = await self._send_with_retry(method.upper(), url, kwargs)
+            response = await self._exchange(method.upper(), url, headers, follow=follow)
             elapsed_ms = (time.perf_counter() - started) * 1000
-        self.requests_made += 1
         return HttpResponse(
             url=str(response.url),
             status=response.status_code,
@@ -158,6 +229,71 @@ class SafeHttpClient:
             request_method=method.upper(),
             request_headers=dict(response.request.headers.items()),
         )
+
+    def _outbound_headers(
+        self, extra: dict[str, str] | None, *, include_authorization: bool
+    ) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if include_authorization:
+            headers.update(self._auth_headers)
+        if extra:
+            headers.update(extra)
+        if not include_authorization:
+            headers = {
+                name: value
+                for name, value in headers.items()
+                if name.lower() not in _AUTH_HEADER_NAMES
+            }
+        return headers
+
+    async def _exchange(
+        self,
+        method: str,
+        url: str,
+        extra_headers: dict[str, str] | None,
+        *,
+        follow: bool,
+    ) -> httpx.Response:
+        """Send ``url``, following in-scope redirects up to ``_MAX_REDIRECTS``."""
+
+        current_url = url
+        current_method = method
+        extra = dict(extra_headers or {})
+        include_authorization = True
+        for hop in range(_MAX_REDIRECTS + 1):
+            host = urlparse(current_url).hostname or ""
+            await self._limiter.acquire(host)
+            headers = self._outbound_headers(
+                extra, include_authorization=include_authorization
+            )
+            kwargs: dict[str, object] = {}
+            if headers:
+                kwargs["headers"] = headers
+            response = await self._send_with_retry(current_method, current_url, kwargs)
+            self.requests_made += 1
+            if not follow or response.status_code not in _REDIRECT_STATUSES:
+                return response
+            location = response.headers.get("location")
+            if not location:
+                return response
+            next_url = _resolve_redirect(str(response.url), location)
+            if not self._scope.allows(next_url):
+                return response
+            if hop == _MAX_REDIRECTS:
+                raise httpx.TooManyRedirects("Exceeded maximum allowed redirects.")
+            current_method = _redirect_method(current_method, response.status_code)
+            self._check_method(current_method)
+            landed = str(response.url)
+            include_authorization = _same_origin(landed, next_url) or _is_https_upgrade(
+                landed, next_url
+            )
+            extra = {
+                name: value
+                for name, value in extra.items()
+                if name.lower() not in {"cookie", *_AUTH_HEADER_NAMES}
+            }
+            current_url = next_url
+        raise httpx.TooManyRedirects("Exceeded maximum allowed redirects.")
 
     async def _send_with_retry(
         self, method: str, url: str, kwargs: dict[str, object]

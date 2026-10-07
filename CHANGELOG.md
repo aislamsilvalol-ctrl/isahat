@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Checkpoints redact `Authorization`, `Cookie`, `Set-Cookie` secrets,
   `Proxy-Authorization` and API-key style headers. Response bodies are stored
   as a hash, a size and a masked capped copy, which is what resume reads.
+- Redirects are followed manually. Each hop is checked against the scope, and
+  an out-of-scope `Location` is not requested.
 
 ### Added
 
