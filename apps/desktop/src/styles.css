@@ -544,6 +544,21 @@ label {
   line-height: 1.65;
 }
 
+.compare-report {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 12px;
+  max-height: 420px;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  line-height: 1.6;
+}
+
 .evidence pre, .remediation pre {
   font-family: var(--font-mono);
   font-size: 11.5px;
