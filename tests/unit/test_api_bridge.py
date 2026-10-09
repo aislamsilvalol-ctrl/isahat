@@ -418,5 +418,145 @@ def test_annotation_state_enum_validated(client, stored_scan):
     assert response.status_code == 422
 
 
+def _sse_events(client, scan_id: str, last_event_id: int | None = None) -> list[dict[str, object]]:
+    import json  # noqa: PLC0415
+
+    headers = {} if last_event_id is None else {"Last-Event-ID": str(last_event_id)}
+    parsed: list[dict[str, object]] = []
+    current_id: int | None = None
+    with client.stream("GET", f"/scans/{scan_id}/events", headers=headers) as response:
+        assert response.status_code == 200
+        for line in response.iter_lines():
+            if not line:
+                continue
+            if line.startswith("id: "):
+                current_id = int(line.removeprefix("id: "))
+            elif line.startswith("data: "):
+                payload = json.loads(line.removeprefix("data: "))
+                assert payload["id"] == current_id
+                parsed.append(payload)
+                current_id = None
+    return parsed
+
+
+def test_event_ids_survive_buffer_trim(monkeypatch):
+    """Trimming the buffer must not renumber events or skip ones still stored."""
+
+    from isahat.api.app import _events_after, _ScanJob  # noqa: PLC0415
+
+    monkeypatch.setattr("isahat.api.app._EVENT_BUFFER_LIMIT", 3)
+    job = _ScanJob("buffer")
+
+    async def publish_all() -> None:
+        for index in range(5):
+            await job.publish("stage", f"m{index}")
+
+    import asyncio  # noqa: PLC0415
+
+    asyncio.run(publish_all())
+    assert [event["id"] for event in job.events] == [3, 4, 5]
+    # A client that already saw ids 1 and 2 still receives 3, 4 and 5.
+    assert [event["id"] for event in _events_after(job.events, 2)] == [3, 4, 5]
+    assert [event["message"] for event in _events_after(job.events, 4)] == ["m4"]
+    assert _events_after(job.events, 5) == []
+
+
+def test_sse_reconnect_does_not_skip_or_repeat(client, tmp_path, monkeypatch):
+    from isahat.core.engine import ScanEngine  # noqa: PLC0415
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    async def _run(self):  # noqa: ANN001
+        raise RuntimeError("stop-before-scan")
+
+    monkeypatch.setattr(ScanEngine, "run", _run)
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="sse1",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+
+    assert client.post("/scans/sse1/resume").status_code == 202
+    deadline = time.time() + 10
+    status = {"status": "running"}
+    while time.time() < deadline:
+        status = client.get("/scans/sse1/status").json()
+        if status["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert status["status"] == "error"
+
+    first = _sse_events(client, "sse1")
+    ids = [int(event["id"]) for event in first]
+    assert ids == sorted(ids)
+    assert len(ids) == len(set(ids))
+    assert len(ids) >= 2
+    midpoint = ids[0]
+    second = _sse_events(client, "sse1", last_event_id=midpoint)
+    assert [int(event["id"]) for event in second] == [event_id for event_id in ids if event_id > midpoint]
+    assert second == [event for event in first if int(event["id"]) > midpoint]
+    assert _sse_events(client, "sse1", last_event_id=ids[-1]) == []
+
+
+def test_sse_rejects_malformed_last_event_id(client, tmp_path, monkeypatch):
+    from isahat.core.engine import ScanEngine  # noqa: PLC0415
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    async def _run(self):  # noqa: ANN001
+        raise RuntimeError("stop-before-scan")
+
+    monkeypatch.setattr(ScanEngine, "run", _run)
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="ssebad",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+    assert client.post("/scans/ssebad/resume").status_code == 202
+    response = client.get("/scans/ssebad/events", headers={"Last-Event-ID": "nope"})
+    assert response.status_code == 400
+
+
+def test_finished_job_is_removed_after_ttl(client, tmp_path, monkeypatch):
+    from isahat.core.engine import ScanEngine  # noqa: PLC0415
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    async def _run(self):  # noqa: ANN001
+        raise RuntimeError("stop-before-scan")
+
+    monkeypatch.setattr(ScanEngine, "run", _run)
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="ttl1",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+
+    assert client.post("/scans/ttl1/resume").status_code == 202
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        body = client.get("/scans/ttl1/status").json()
+        if body["status"] != "running":
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("job did not finish")
+    assert client.get("/scans/ttl1/events").status_code == 200
+
+    monkeypatch.setattr("isahat.api.app._FINISHED_JOB_TTL_SECONDS", 0.0)
+    assert client.get("/scans/ttl1/events").status_code == 404
+    # The checkpoint was not finalized, so status no longer has a live job.
+    assert client.get("/scans/ttl1/status").status_code == 404
+
+
 def test_finding_state_values_cover_review_workflow():
     assert {s.value for s in FindingState} >= {"open", "false_positive", "fixed"}
