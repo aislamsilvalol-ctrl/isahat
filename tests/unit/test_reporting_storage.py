@@ -168,6 +168,51 @@ def test_storage_save_get_list(tmp_path):
         assert store.get_latest_for_target("https://example.com").id == result.id
 
 
+def test_new_database_is_private_wal_and_waits(tmp_path):
+    import stat  # noqa: PLC0415
+
+    directory = tmp_path / "data"
+    db = directory / "isahat.db"
+    with ScanStore(db) as store:
+        journal = store._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        busy = store._conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        assert journal == "wal"
+        assert busy == 5000
+        assert db == store.path
+        for suffix in ("-wal", "-shm"):
+            sidecar = db.parent / f"{db.name}{suffix}"
+            assert sidecar.exists()
+            assert stat.S_IMODE(sidecar.stat().st_mode) == 0o600
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    assert stat.S_IMODE(db.stat().st_mode) == 0o600
+
+
+def test_existing_database_directory_mode_is_unchanged(tmp_path):
+    import os  # noqa: PLC0415
+    import stat  # noqa: PLC0415
+
+    directory = tmp_path / "shared"
+    directory.mkdir()
+    os.chmod(directory, 0o755)
+    db = directory / "isahat.db"
+    with ScanStore(db) as store:
+        assert store.path == db
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o755
+    assert stat.S_IMODE(db.stat().st_mode) == 0o600
+
+
+def test_default_db_directory_is_created_private(tmp_path, monkeypatch):
+    import stat  # noqa: PLC0415
+
+    from isahat.storage.database import default_db_path  # noqa: PLC0415
+
+    home = tmp_path / "isahat-home"
+    monkeypatch.setenv("ISAHAT_HOME", str(home))
+    path = default_db_path()
+    assert path == home / "isahat.db"
+    assert stat.S_IMODE(home.stat().st_mode) == 0o700
+
+
 def test_storage_upsert_is_idempotent(tmp_path):
     db = tmp_path / "isahat.db"
     result = make_result()

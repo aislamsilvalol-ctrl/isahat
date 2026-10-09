@@ -69,6 +69,34 @@ CREATE TABLE IF NOT EXISTS annotations (
 """
 
 
+_DB_DIR_MODE = 0o700
+_DB_FILE_MODE = 0o600
+_BUSY_TIMEOUT_MS = 5000
+
+
+def _mkdir_private(directory: Path) -> None:
+    """Create ``directory`` as mode 0700. Do not chmod a directory we found.
+
+    ``Path.mkdir`` still applies the process umask, so a directory this
+    function creates is chmod'd afterwards. An existing directory is left
+    alone: the database path must not change, and a parent such as ``/tmp``
+    must not be restricted.
+    """
+
+    if directory.exists():
+        return
+    directory.mkdir(parents=True, exist_ok=True, mode=_DB_DIR_MODE)
+    os.chmod(directory, _DB_DIR_MODE)
+
+
+def _restrict_db_files(path: Path) -> None:
+    """Mode 0600 on the database file and its WAL sidecars."""
+
+    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        if candidate.exists():
+            os.chmod(candidate, _DB_FILE_MODE)
+
+
 def _lease_active(value: str | None, now: datetime) -> bool:
     """True when ``value`` is a timestamp still in the future."""
 
@@ -85,7 +113,7 @@ def default_db_path() -> Path:
 
     home = os.environ.get("ISAHAT_HOME")
     base = Path(home) if home else Path.home() / ".isahat"
-    base.mkdir(parents=True, exist_ok=True)
+    _mkdir_private(base)
     return base / "isahat.db"
 
 
@@ -126,15 +154,22 @@ class ScanStore:
         import threading
 
         self.path = Path(path) if path is not None else default_db_path()
-        if self.path.parent and not self.path.parent.exists():
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.parent and self.path.parent != Path("."):
+            _mkdir_private(self.path.parent)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        self._conn = sqlite3.connect(
+            str(self.path),
+            check_same_thread=False,
+            timeout=_BUSY_TIMEOUT_MS / 1000,
+        )
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}").fetchone()
+        self._conn.execute("PRAGMA journal_mode=WAL").fetchone()
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._ensure_lease_column()
             self._conn.commit()
+        _restrict_db_files(self.path)
 
     def _ensure_lease_column(self) -> None:
         """Add ``lease_until`` to databases created before the resume lease.
