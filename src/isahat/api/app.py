@@ -14,13 +14,17 @@ Design notes:
   set headers. The query value is never logged.
 * **Live progress.** Scans run as asyncio tasks; progress events are buffered
   per scan and streamed to clients over SSE (``/scans/{id}/events``).
+  Each event carries an absolute id. A reconnect sends ``Last-Event-ID`` and
+  receives only newer events. Finished jobs leave memory after a TTL.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import json
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -48,6 +52,10 @@ _EVENT_BUFFER_LIMIT = 500
 # Crash window for a resume that never reaches a terminal status. The
 # in-memory job still rejects a second resume in this process after it expires.
 _RESUME_LEASE_SECONDS = 3600.0
+# How long a finished job stays in memory so a client can reconnect to its
+# event tail. Running jobs are never removed by this timer.
+_FINISHED_JOB_TTL_SECONDS = 600.0
+_JOB_SWEEP_SECONDS = 30.0
 
 
 class ScanRequest(BaseModel):
@@ -79,7 +87,11 @@ class ScanStatus(BaseModel):
 
 
 class _ScanJob:
-    """A running (or finished) scan and its progress event buffer."""
+    """A running (or finished) scan and its progress event buffer.
+
+    Event ids are absolute. Dropping a prefix of ``events`` does not renumber
+    what remains, so a cursor is the last id the client has, not a list index.
+    """
 
     def __init__(self, scan_id: str, target: str = "") -> None:
         self.scan_id = scan_id
@@ -89,13 +101,58 @@ class _ScanJob:
         self.detail = ""
         self.task: asyncio.Task[None] | None = None
         self.condition = asyncio.Condition()
+        self._next_id = 1
+        self.terminal: dict[str, Any] | None = None
+        self.finished_at: float | None = None
+
+    def _allocate(self, stage: str, message: str) -> dict[str, Any]:
+        event = {"id": self._next_id, "stage": stage, "message": message}
+        self._next_id += 1
+        return event
 
     async def publish(self, stage: str, message: str) -> None:
-        self.events.append({"stage": stage, "message": message})
-        if len(self.events) > _EVENT_BUFFER_LIMIT:
-            del self.events[: len(self.events) - _EVENT_BUFFER_LIMIT]
+        self.events.append(self._allocate(stage, message))
+        overflow = len(self.events) - _EVENT_BUFFER_LIMIT
+        if overflow > 0:
+            del self.events[:overflow]
         async with self.condition:
             self.condition.notify_all()
+
+    async def finish(self, status: str, detail: str) -> None:
+        """Record a terminal status and one SSE event for it."""
+
+        self.status = status
+        self.detail = detail
+        self.finished_at = time.monotonic()
+        self.terminal = self._allocate(status, detail)
+        async with self.condition:
+            self.condition.notify_all()
+
+
+def _events_after(events: list[dict[str, Any]], last_id: int) -> list[dict[str, Any]]:
+    """Events strictly newer than ``last_id``, in buffer order."""
+
+    return [event for event in events if int(event["id"]) > last_id]
+
+
+def _format_sse(event: dict[str, Any]) -> str:
+    return f"id: {event['id']}\ndata: {json.dumps(event)}\n\n"
+
+
+def _parse_last_event_id(header: str | None) -> int:
+    if header is None or header.strip() == "":
+        return 0
+    try:
+        value = int(header)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Last-Event-ID must be a non-negative integer"
+        ) from exc
+    if value < 0:
+        raise HTTPException(
+            status_code=400, detail="Last-Event-ID must be a non-negative integer"
+        )
+    return value
 
 
 def _unauthorized() -> JSONResponse:
@@ -175,7 +232,36 @@ def create_app(
     """Build the bridge application. ``db_path`` is injectable for tests."""
 
     expected_token = load_or_create_bridge_token(bridge_token_path(db_path))
-    app = FastAPI(title="IsaHat Bridge", version=__version__)
+    jobs: dict[str, _ScanJob] = {}
+
+    def _purge_finished_jobs() -> None:
+        now = time.monotonic()
+        expired = [
+            scan_id
+            for scan_id, job in jobs.items()
+            if job.finished_at is not None
+            and job.status != "running"
+            and now - job.finished_at >= _FINISHED_JOB_TTL_SECONDS
+        ]
+        for scan_id in expired:
+            jobs.pop(scan_id, None)
+
+    async def _sweep_finished_jobs() -> None:
+        while True:
+            await asyncio.sleep(_JOB_SWEEP_SECONDS)
+            _purge_finished_jobs()
+
+    @contextlib.asynccontextmanager
+    async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        sweeper = asyncio.create_task(_sweep_finished_jobs())
+        try:
+            yield
+        finally:
+            sweeper.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sweeper
+
+    app = FastAPI(title="IsaHat Bridge", version=__version__, lifespan=_lifespan)
     # Auth is added first so CORS stays outside it. A 401 then still carries
     # the allow-origin header the webview needs to read the response.
     app.add_middleware(_BridgeTokenMiddleware, token=expected_token)
@@ -190,7 +276,6 @@ def create_app(
 
     store = ScanStore(db_path)
     base_config = load_config(config_path)
-    jobs: dict[str, _ScanJob] = {}
 
     async def _run_scan(job: _ScanJob, request: ScanRequest) -> None:
         config = base_config.model_copy(deep=True)
@@ -217,11 +302,11 @@ def create_app(
             # ``run`` persists the result and deletes the checkpoint together.
             result = await engine.run()
         except ScopeViolation as exc:
-            job.status, job.detail = "error", f"scope: {exc}"
+            await job.finish("error", f"scope: {exc}")
         except Exception as exc:  # noqa: BLE001 - surface as job status, not a crash
-            job.status, job.detail = "error", str(exc)
+            await job.finish("error", str(exc))
         else:
-            job.status, job.detail = "done", result.id
+            await job.finish("done", result.id)
         finally:
             async with job.condition:
                 job.condition.notify_all()
@@ -252,6 +337,7 @@ def create_app(
 
     @app.get("/scans")
     def list_scans(limit: Annotated[int, Query(ge=1, le=200)] = 50) -> list[dict[str, Any]]:
+        _purge_finished_jobs()
         rows = store.list(limit=limit)
         known = {row.id for row in rows}
         out: list[dict[str, Any]] = [
@@ -296,6 +382,7 @@ def create_app(
     def list_checkpoints() -> list[dict[str, Any]]:
         """Interrupted scans that can be resumed, newest first."""
 
+        _purge_finished_jobs()
         return [
             {
                 "scan_id": cp.scan_id,
@@ -312,6 +399,7 @@ def create_app(
         """Resume an interrupted scan from its checkpoint (same engine path as
         `isahat scan <target> --resume <id>`)."""
 
+        _purge_finished_jobs()
         existing = jobs.get(scan_id)
         if existing is not None and existing.status == "running":
             raise HTTPException(status_code=409, detail=f"scan already running: {scan_id}")
@@ -366,6 +454,7 @@ def create_app(
 
     @app.get("/scans/{scan_id}/status")
     async def scan_status(scan_id: str) -> ScanStatus:
+        _purge_finished_jobs()
         job = jobs.get(scan_id)
         if job is None:
             result = store.get(scan_id)
@@ -377,22 +466,29 @@ def create_app(
         )
 
     @app.get("/scans/{scan_id}/events")
-    async def scan_events(scan_id: str) -> StreamingResponse:
+    async def scan_events(scan_id: str, request: Request) -> StreamingResponse:
+        _purge_finished_jobs()
         job = jobs.get(scan_id)
         if job is None:
             raise HTTPException(status_code=404, detail=f"scan not found: {scan_id}")
+        last_id = _parse_last_event_id(request.headers.get("last-event-id"))
 
         async def stream() -> AsyncIterator[str]:
-            cursor = 0
+            cursor = last_id
             while True:
-                while cursor < len(job.events):
-                    event = job.events[cursor]
-                    cursor += 1
-                    yield f"data: {json.dumps(event)}\n\n"
+                for event in _events_after(list(job.events), cursor):
+                    cursor = int(event["id"])
+                    yield _format_sse(event)
+                terminal = job.terminal
                 if job.status != "running":
-                    yield f"data: {json.dumps({'stage': job.status, 'message': job.detail})}\n\n"
+                    if terminal is not None and int(terminal["id"]) > cursor:
+                        yield _format_sse(terminal)
                     return
                 async with job.condition:
+                    # Re-check under the lock so a publish between the snapshot
+                    # and the wait is not lost.
+                    if _events_after(job.events, cursor) or job.status != "running":
+                        continue
                     await job.condition.wait()
 
         return StreamingResponse(stream(), media_type="text/event-stream")

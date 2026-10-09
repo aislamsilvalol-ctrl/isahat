@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- SSE progress events use an absolute id. Reconnect with `Last-Event-ID`
+  continues without skipping or repeating events still in the buffer.
+  Finished in-memory jobs are dropped after a TTL.
 - A second resume of the same checkpoint takes a SQLite lease
   (`BEGIN IMMEDIATE`, `lease_until`) and returns 409 while that lease is held.
 - Resuming a scan restores the profile, scan type and rate-limit flag saved in
