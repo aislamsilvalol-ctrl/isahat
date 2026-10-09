@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS annotations (
 _DB_DIR_MODE = 0o700
 _DB_FILE_MODE = 0o600
 _BUSY_TIMEOUT_MS = 5000
+RESUME_LEASE_SECONDS = 3600.0
 
 
 def _mkdir_private(directory: Path) -> None:

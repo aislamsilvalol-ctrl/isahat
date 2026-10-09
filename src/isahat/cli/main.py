@@ -26,6 +26,7 @@ from isahat.core.scope import Scope, ScopeViolation
 from isahat.core.state import ResumeRejected, require_resume_contract
 from isahat.reporting import compare_scans, diff_to_markdown, extension_for, render
 from isahat.storage import ScanStore
+from isahat.storage.database import RESUME_LEASE_SECONDS
 
 app = typer.Typer(
     name="isahat",
@@ -52,6 +53,15 @@ def _parse_severity(value: str | None) -> Severity | None:
 
 def _exit(code: ExitCode) -> NoReturn:
     raise typer.Exit(code=int(code))
+
+
+def _missing_resume_checkpoint(console: Console, store: ScanStore, resume: str) -> NoReturn:
+    console.print(
+        f"[red]No checkpoint found for scan '{resume}'.[/red] "
+        "Checkpoints exist only for interrupted scans run with storage enabled."
+    )
+    store.close()
+    _exit(ExitCode.USAGE)
 
 
 def _build_config(
@@ -202,17 +212,13 @@ def scan(
         _exit(ExitCode.USAGE)
 
     store: ScanStore | None = None
+    held_resume: str | None = None
     if not no_store:
         store = ScanStore(db_path)
         if resume is not None:
             checkpoint = store.load_checkpoint(resume)
             if checkpoint is None:
-                console.print(
-                    f"[red]No checkpoint found for scan '{resume}'.[/red] "
-                    "Checkpoints exist only for interrupted scans run with storage enabled."
-                )
-                store.close()
-                _exit(ExitCode.USAGE)
+                _missing_resume_checkpoint(console, store, resume)
             try:
                 contract = require_resume_contract(checkpoint)
             except ResumeRejected as exc:
@@ -225,74 +231,84 @@ def scan(
             scan_type = contract.scan_type
             rate_limit_check = contract.rate_limit_check
             config.safety.rate_limit_checks = contract.rate_limit_check
-
-    engine = ScanEngine(
-        target,
-        config,
-        scan_type=scan_type,
-        on_progress=on_progress if verbose else None,
-        auth=auth,
-        checkpoint_store=store,
-        scan_id=resume,
-    )
-    if auth is not None and not quiet:
-        console.print("[dim]Authenticated scan: attaching provided headers/cookies.[/dim]")
-    if rate_limit_check and not quiet:
-        console.print(
-            "[yellow]Rate-limit checks enabled:[/yellow] controlled burst probes "
-            f"(max {config.safety.rate_limit_burst} requests/endpoint) on auth-like endpoints."
-        )
-    if not quiet:
-        console.print(f"[dim]Scan ID: {engine.scan_id} (resume with --resume {engine.scan_id})[/dim]")
+            acquired = store.try_acquire_resume_lease(resume, RESUME_LEASE_SECONDS)
+            if acquired is None:
+                _missing_resume_checkpoint(console, store, resume)
+            if acquired is False:
+                console.print("[red]scan já está sendo retomado[/red]")
+                store.close()
+                _exit(ExitCode.USAGE)
+            held_resume = resume
 
     try:
-        if quiet or verbose:
-            result = engine.scan()
-        else:
-            with console.status(f"Scanning {target}…", spinner="dots"):
+        engine = ScanEngine(
+            target,
+            config,
+            scan_type=scan_type,
+            on_progress=on_progress if verbose else None,
+            auth=auth,
+            checkpoint_store=store,
+            scan_id=resume,
+        )
+        if auth is not None and not quiet:
+            console.print("[dim]Authenticated scan: attaching provided headers/cookies.[/dim]")
+        if rate_limit_check and not quiet:
+            console.print(
+                "[yellow]Rate-limit checks enabled:[/yellow] controlled burst probes "
+                f"(max {config.safety.rate_limit_burst} requests/endpoint) on auth-like endpoints."
+            )
+        if not quiet:
+            console.print(
+                f"[dim]Scan ID: {engine.scan_id} (resume with --resume {engine.scan_id})[/dim]"
+            )
+
+        try:
+            if quiet or verbose:
                 result = engine.scan()
-    except ScopeViolation as exc:
-        console.print(f"[red]Scope error:[/red] {exc}")
-        if store is not None:
-            store.close()
-        _exit(ExitCode.USAGE)
-    except KeyboardInterrupt:  # pragma: no cover - interactive
-        console.print(
-            f"[yellow]Cancelled by user.[/yellow] Progress saved — resume with:\n"
-            f"  isahat scan {target} --resume {engine.scan_id}"
-        )
-        if store is not None:
-            store.close()
-        _exit(ExitCode.CANCELLED)
-    except Exception as exc:  # noqa: BLE001 - surface a clean error and code
-        console.print(f"[red]Scan failed:[/red] {exc}")
-        if store is not None:
-            store.close()
-        _exit(ExitCode.ERROR)
+            else:
+                with console.status(f"Scanning {target}…", spinner="dots"):
+                    result = engine.scan()
+        except ScopeViolation as exc:
+            console.print(f"[red]Scope error:[/red] {exc}")
+            _exit(ExitCode.USAGE)
+        except KeyboardInterrupt:
+            console.print(
+                f"[yellow]Cancelled by user.[/yellow] Progress saved — resume with:\n"
+                f"  isahat scan {target} --resume {engine.scan_id}"
+            )
+            _exit(ExitCode.CANCELLED)
+        except Exception as exc:  # noqa: BLE001 - surface a clean error and code
+            console.print(f"[red]Scan failed:[/red] {exc}")
+            _exit(ExitCode.ERROR)
 
-    if min_severity is not None:
-        result.findings = result.findings_at_or_above(min_severity)
-        result.recompute_stats()
-
-    if store is not None:
-        # The engine already stored the full result and removed the checkpoint
-        # in one transaction. Persist again only when --severity filtered it.
         if min_severity is not None:
+            result.findings = result.findings_at_or_above(min_severity)
+            result.recompute_stats()
+
+        if store is not None and min_severity is not None:
+            # The engine already stored the full result and removed the checkpoint
+            # in one transaction. Persist again only when --severity filtered it.
             store.save(result)
-        store.close()
 
-    if not quiet:
-        ui.render_findings_table(console, result)
-        ui.render_summary(console, result)
+        if not quiet:
+            ui.render_findings_table(console, result)
+            ui.render_summary(console, result)
 
-    _write_reports(console, result, fmt, output)
+        _write_reports(console, result, fmt, output)
 
-    if fail_severity is not None and result.findings_at_or_above(fail_severity):
-        console.print(
-            f"[red]Gate failed:[/red] findings at or above '{fail_severity.value}' were found."
-        )
-        _exit(ExitCode.THRESHOLD)
-    _exit(ExitCode.OK)
+        if fail_severity is not None and result.findings_at_or_above(fail_severity):
+            console.print(
+                f"[red]Gate failed:[/red] findings at or above '{fail_severity.value}' were found."
+            )
+            _exit(ExitCode.THRESHOLD)
+        _exit(ExitCode.OK)
+    finally:
+        if store is not None:
+            try:
+                if held_resume is not None:
+                    store.release_resume_lease(held_resume)
+            finally:
+                store.close()
 
 
 @app.command()
