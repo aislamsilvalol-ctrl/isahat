@@ -45,6 +45,9 @@ from isahat.reporting.compare import diff_to_markdown
 from isahat.storage import ScanStore
 
 _EVENT_BUFFER_LIMIT = 500
+# Crash window for a resume that never reaches a terminal status. The
+# in-memory job still rejects a second resume in this process after it expires.
+_RESUME_LEASE_SECONDS = 3600.0
 
 
 class ScanRequest(BaseModel):
@@ -219,8 +222,12 @@ def create_app(
             job.status, job.detail = "error", str(exc)
         else:
             job.status, job.detail = "done", result.id
-        async with job.condition:
-            job.condition.notify_all()
+        finally:
+            async with job.condition:
+                job.condition.notify_all()
+            # A start has no lease; clearing it is a no-op. A resume must not
+            # keep the row locked after the job reaches a terminal status.
+            store.release_resume_lease(job.scan_id)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -318,23 +325,36 @@ def create_app(
             contract = require_resume_contract(checkpoint)
         except ResumeRejected as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        acquired = store.try_acquire_resume_lease(scan_id, _RESUME_LEASE_SECONDS)
+        if acquired is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no checkpoint for scan: {scan_id}",
+            )
+        if not acquired:
+            raise HTTPException(status_code=409, detail=f"scan already running: {scan_id}")
         job = _ScanJob(scan_id, target=checkpoint.target)
         jobs[scan_id] = job
-        await job.publish("resume", f"resuming from stage '{checkpoint.stage}'")
-        # Resume re-runs with the same scan id; the engine loads the checkpoint
-        # from the store itself. Authorisation was confirmed for the original
-        # run — the checkpoint is proof of it. Profile, type and the rate-limit
-        # flag come from that checkpoint, not from ScanRequest defaults.
-        # Credentials are not in the contract; authenticated scans are rejected
-        # above, so auth stays empty.
-        request = ScanRequest(
-            target=checkpoint.target,
-            profile=contract.profile,
-            scan_type=contract.scan_type,
-            rate_limit_check=contract.rate_limit_check,
-            confirmed=True,
-        )
-        job.task = asyncio.create_task(_run_scan(job, request))
+        try:
+            await job.publish("resume", f"resuming from stage '{checkpoint.stage}'")
+            # Resume re-runs with the same scan id; the engine loads the checkpoint
+            # from the store itself. Authorisation was confirmed for the original
+            # run — the checkpoint is proof of it. Profile, type and the rate-limit
+            # flag come from that checkpoint, not from ScanRequest defaults.
+            # Credentials are not in the contract; authenticated scans are rejected
+            # above, so auth stays empty.
+            request = ScanRequest(
+                target=checkpoint.target,
+                profile=contract.profile,
+                scan_type=contract.scan_type,
+                rate_limit_check=contract.rate_limit_check,
+                confirmed=True,
+            )
+            job.task = asyncio.create_task(_run_scan(job, request))
+        except Exception:
+            jobs.pop(scan_id, None)
+            store.release_resume_lease(scan_id)
+            raise
         return ScanAccepted(scan_id=scan_id, target=checkpoint.target)
 
     @app.get("/scans/{scan_id}")

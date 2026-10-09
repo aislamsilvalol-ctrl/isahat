@@ -13,7 +13,7 @@ import os
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -21,6 +21,7 @@ from isahat.core.models import FindingAnnotation, FindingState, ScanResult
 from isahat.core.state import ScanCheckpoint
 
 _F = TypeVar("_F", bound=Callable[..., Any])
+_T = TypeVar("_T")
 
 
 def _synchronized(method: _F) -> _F:
@@ -52,11 +53,12 @@ CREATE TABLE IF NOT EXISTS scans (
 CREATE INDEX IF NOT EXISTS idx_scans_target ON scans(target);
 CREATE INDEX IF NOT EXISTS idx_scans_started ON scans(started_at);
 CREATE TABLE IF NOT EXISTS checkpoints (
-    scan_id   TEXT PRIMARY KEY,
-    target    TEXT NOT NULL,
-    stage     TEXT NOT NULL,
-    payload   TEXT NOT NULL,
-    saved_at  TEXT NOT NULL
+    scan_id     TEXT PRIMARY KEY,
+    target      TEXT NOT NULL,
+    stage       TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    saved_at    TEXT NOT NULL,
+    lease_until TEXT
 );
 CREATE TABLE IF NOT EXISTS annotations (
     finding_id TEXT PRIMARY KEY,
@@ -65,6 +67,17 @@ CREATE TABLE IF NOT EXISTS annotations (
     updated_at TEXT NOT NULL
 );
 """
+
+
+def _lease_active(value: str | None, now: datetime) -> bool:
+    """True when ``value`` is a timestamp still in the future."""
+
+    if not value:
+        return False
+    held_until = datetime.fromisoformat(value)
+    if held_until.tzinfo is None:
+        held_until = held_until.replace(tzinfo=UTC)
+    return held_until > now
 
 
 def default_db_path() -> Path:
@@ -120,7 +133,38 @@ class ScanStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._ensure_lease_column()
             self._conn.commit()
+
+    def _ensure_lease_column(self) -> None:
+        """Add ``lease_until`` to databases created before the resume lease.
+
+        ``CREATE TABLE IF NOT EXISTS`` does not alter an existing table, so
+        this migration is additive and leaves every other column alone.
+        """
+
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(checkpoints)").fetchall()
+        }
+        if "lease_until" not in columns:
+            self._conn.execute("ALTER TABLE checkpoints ADD COLUMN lease_until TEXT")
+
+    def _in_immediate(self, work: Callable[[], _T]) -> _T:
+        """Run ``work`` inside ``BEGIN IMMEDIATE``.
+
+        The write lock is taken before the read, so two processes cannot both
+        observe a free resume lease and then both claim it.
+        """
+
+        self._conn.commit()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            result = work()
+            self._conn.commit()
+            return result
+        except Exception:
+            self._conn.rollback()
+            raise
 
     @_synchronized
     def close(self) -> None:
@@ -286,6 +330,47 @@ class ScanStore:
     def delete_checkpoint(self, scan_id: str) -> None:
         self._conn.execute("DELETE FROM checkpoints WHERE scan_id = ?", (scan_id,))
         self._conn.commit()
+
+    @_synchronized
+    def try_acquire_resume_lease(self, scan_id: str, ttl_seconds: float) -> bool | None:
+        """Claim the resume lease for ``scan_id``.
+
+        Returns ``True`` when this caller holds the lease, ``False`` when
+        another holder still has it, and ``None`` when no checkpoint exists.
+        ``BEGIN IMMEDIATE`` takes the write lock before the read.
+        """
+
+        now = datetime.now(UTC)
+        until = (now + timedelta(seconds=ttl_seconds)).isoformat()
+
+        def claim() -> bool | None:
+            row = self._conn.execute(
+                "SELECT lease_until FROM checkpoints WHERE scan_id = ?",
+                (scan_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if _lease_active(row["lease_until"], now):
+                return False
+            self._conn.execute(
+                "UPDATE checkpoints SET lease_until = ? WHERE scan_id = ?",
+                (until, scan_id),
+            )
+            return True
+
+        return self._in_immediate(claim)
+
+    @_synchronized
+    def release_resume_lease(self, scan_id: str) -> None:
+        """Drop the resume lease. A missing checkpoint is not an error."""
+
+        def clear() -> None:
+            self._conn.execute(
+                "UPDATE checkpoints SET lease_until = NULL WHERE scan_id = ?",
+                (scan_id,),
+            )
+
+        self._in_immediate(clear)
 
     @_synchronized
     def list_checkpoints(self) -> builtins.list[CheckpointSummary]:

@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A second resume of the same checkpoint takes a SQLite lease
+  (`BEGIN IMMEDIATE`, `lease_until`) and returns 409 while that lease is held.
 - Resuming a scan restores the profile, scan type and rate-limit flag saved in
   the checkpoint. A checkpoint without that contract is refused. Authenticated
   scans are refused too: there is no secure credential store, so headers and
