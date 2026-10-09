@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Saving a checkpoint renews a held resume lease for another hour. A
+  checkpoint that has no lease is left without one.
 - `isahat scan --resume` takes the same resume lease as the bridge. A second
   resume prints that the scan is already being resumed and exits 2. The lease
   is released when the run ends, including errors and cancellation.

@@ -333,6 +333,8 @@ class ScanStore:
 
     @_synchronized
     def save_checkpoint(self, checkpoint: ScanCheckpoint) -> None:
+        now = datetime.now(UTC)
+        renewed_until = (now + timedelta(seconds=RESUME_LEASE_SECONDS)).isoformat()
         self._conn.execute(
             """
             INSERT INTO checkpoints (scan_id, target, stage, payload, saved_at)
@@ -341,14 +343,19 @@ class ScanStore:
                 target=excluded.target,
                 stage=excluded.stage,
                 payload=excluded.payload,
-                saved_at=excluded.saved_at
+                saved_at=excluded.saved_at,
+                lease_until=CASE
+                    WHEN checkpoints.lease_until IS NOT NULL THEN ?
+                    ELSE checkpoints.lease_until
+                END
             """,
             (
                 checkpoint.scan_id,
                 checkpoint.target,
                 checkpoint.stage,
                 checkpoint.model_dump_json(),
-                datetime.now(UTC).isoformat(),
+                now.isoformat(),
+                renewed_until,
             ),
         )
         self._conn.commit()
