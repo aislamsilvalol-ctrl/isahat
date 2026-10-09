@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The security workflow fails when `pip-audit` reports a vulnerable
+  third-party package. The unpublished local project is left out of that
+  collection because it is not on PyPI; that skip is not an advisory.
 - SSE progress events use an absolute id. Reconnect with `Last-Event-ID`
   continues without skipping or repeating events still in the buffer.
   Finished in-memory jobs are dropped after a TTL.
