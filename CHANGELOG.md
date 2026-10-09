@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `isahat scan --resume` takes the same resume lease as the bridge. A second
+  resume prints that the scan is already being resumed and exits 2. The lease
+  is released when the run ends, including errors and cancellation.
 - The desktop compare view shows the markdown diff as preformatted text.
 - The SQLite file is created mode 0600, in a directory created mode 0700,
   with WAL and a busy timeout. An existing directory's mode is left as it is.

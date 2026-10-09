@@ -463,6 +463,99 @@ def test_cli_resume_restores_contract(tmp_path, monkeypatch):
     }
 
 
+def test_cli_resume_refuses_when_another_store_holds_the_lease(tmp_path, monkeypatch):
+    from typer.testing import CliRunner  # noqa: PLC0415
+
+    from isahat.cli.main import app as cli_app  # noqa: PLC0415
+
+    db = tmp_path / "isahat.db"
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="held",
+                target=TARGET,
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+        assert store.try_acquire_resume_lease("held", 3600) is True
+
+    def _refuse_engine(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("engine must not start")
+
+    monkeypatch.setattr(ScanEngine, "__init__", _refuse_engine)
+    result = CliRunner().invoke(
+        cli_app, ["scan", TARGET, "--resume", "held", "--db", str(db), "--yes"]
+    )
+    assert result.exit_code == 2
+    assert "scan já está sendo retomado" in result.output
+    with ScanStore(db) as store:
+        assert store.try_acquire_resume_lease("held", 3600) is False
+
+
+def test_cli_resume_acquire_none_uses_missing_checkpoint_message(tmp_path, monkeypatch):
+    from typer.testing import CliRunner  # noqa: PLC0415
+
+    from isahat.cli.main import app as cli_app  # noqa: PLC0415
+
+    db = tmp_path / "isahat.db"
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="gone",
+                target=TARGET,
+                stage="crawl",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+
+    def _missing(self, _scan_id, _ttl):  # noqa: ANN001
+        return None
+
+    def _refuse_engine(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("engine must not start")
+
+    monkeypatch.setattr(ScanStore, "try_acquire_resume_lease", _missing)
+    monkeypatch.setattr(ScanEngine, "__init__", _refuse_engine)
+    result = CliRunner().invoke(
+        cli_app, ["scan", TARGET, "--resume", "gone", "--db", str(db), "--yes"]
+    )
+    assert result.exit_code == 2
+    assert "No checkpoint found" in result.output
+
+
+def test_cli_resume_releases_lease_on_interrupt(tmp_path, monkeypatch):
+    from typer.testing import CliRunner  # noqa: PLC0415
+
+    from isahat.cli.main import app as cli_app  # noqa: PLC0415
+
+    db = tmp_path / "isahat.db"
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="stop",
+                target=TARGET,
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+
+    def _scan(self):  # noqa: ANN001
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ScanEngine, "scan", _scan)
+    result = CliRunner().invoke(
+        cli_app, ["scan", TARGET, "--resume", "stop", "--db", str(db), "--yes", "--quiet"]
+    )
+    assert result.exit_code == 130
+    with ScanStore(db) as store:
+        row = store._conn.execute(
+            "SELECT lease_until FROM checkpoints WHERE scan_id = ?", ("stop",)
+        ).fetchone()
+        assert row["lease_until"] is None
+        assert store.try_acquire_resume_lease("stop", 30) is True
+
+
 def test_checkpoint_body_is_capped(tmp_path):
     raw_body = "a" * 250_000
     snapshot = ResponseSnapshot.from_response(make_response(TARGET + "/", text=raw_body))
