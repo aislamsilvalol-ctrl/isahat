@@ -275,6 +275,133 @@ def test_resume_restores_saved_contract(client, tmp_path, monkeypatch):
     }
 
 
+def test_resume_lease_is_exclusive(tmp_path):
+    """BEGIN IMMEDIATE lets only one of several concurrent claims succeed."""
+
+    import threading  # noqa: PLC0415
+
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    db = tmp_path / "lease.db"
+    scan_id = "lease1"
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id=scan_id,
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+
+    results: list[bool | None] = []
+    barrier = threading.Barrier(8)
+
+    def claim() -> None:
+        barrier.wait()
+        with ScanStore(db) as store:
+            results.append(store.try_acquire_resume_lease(scan_id, 30))
+
+    threads = [threading.Thread(target=claim) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert results.count(True) == 1
+    assert results.count(False) == 7
+
+    with ScanStore(db) as store:
+        store.release_resume_lease(scan_id)
+        assert store.try_acquire_resume_lease(scan_id, 30) is True
+        store._conn.execute(
+            "UPDATE checkpoints SET lease_until = ? WHERE scan_id = ?",
+            ("2000-01-01T00:00:00+00:00", scan_id),
+        )
+        store._conn.commit()
+        assert store.try_acquire_resume_lease(scan_id, 30) is True
+        assert store.try_acquire_resume_lease("missing", 30) is None
+
+
+def test_resume_while_lease_held_returns_409(client, tmp_path):
+    """A second resume is 409 even when this process has no in-memory job."""
+
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="held1",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+        assert store.try_acquire_resume_lease("held1", 60) is True
+
+    response = client.post("/scans/held1/resume")
+    assert response.status_code == 409
+    assert "already running" in response.json()["detail"]
+    assert client.get("/scans/held1/status").status_code == 404
+
+
+def test_resume_lease_released_when_job_finishes(client, tmp_path, monkeypatch):
+    from isahat.core.engine import ScanEngine  # noqa: PLC0415
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    async def _run(self):  # noqa: ANN001
+        raise RuntimeError("stop-before-scan")
+
+    monkeypatch.setattr(ScanEngine, "run", _run)
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="again1",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(profile="safe", scan_type="web", rate_limit_check=False),
+            )
+        )
+
+    assert client.post("/scans/again1/resume").status_code == 202
+    deadline = time.time() + 10
+    status = {"status": "running"}
+    while time.time() < deadline:
+        status = client.get("/scans/again1/status").json()
+        if status["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert status["status"] == "error"
+    assert client.post("/scans/again1/resume").status_code == 202
+
+
+def test_lease_column_migrates_existing_database(tmp_path):
+    import sqlite3  # noqa: PLC0415
+
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """
+        CREATE TABLE checkpoints (
+            scan_id TEXT PRIMARY KEY,
+            target TEXT NOT NULL,
+            stage TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            saved_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO checkpoints VALUES ('old', 'http://127.0.0.1:9', 'crawl', '{}', 't')"
+    )
+    conn.commit()
+    conn.close()
+
+    with ScanStore(db) as store:
+        columns = [row[1] for row in store._conn.execute("PRAGMA table_info(checkpoints)")]
+        assert "lease_until" in columns
+        assert store.try_acquire_resume_lease("old", 30) is True
+
+
 def test_unknown_scan_404(client):
     assert client.get("/scans/nope").status_code == 404
     assert client.get("/scans/nope/status").status_code == 404
