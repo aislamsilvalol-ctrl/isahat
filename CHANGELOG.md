@@ -8,6 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The SQLite file is created mode 0600, in a directory created mode 0700,
+  with WAL and a busy timeout. An existing directory's mode is left as it is.
 - The security workflow fails when `pip-audit` reports a vulnerable
   third-party package. The unpublished local project is left out of that
   collection because it is not on PyPI; that skip is not an advisory.
