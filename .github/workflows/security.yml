@@ -30,7 +30,14 @@ jobs:
           pip install pip-audit cyclonedx-bom
 
       - name: pip-audit (known vulnerable deps)
-        run: pip-audit --strict || true # report; do not block during alpha
+        # `isahat` is not published on PyPI. A bare `pip-audit --strict` always
+        # fails collection on that editable install, which is not an advisory.
+        # Freeze everything except the editable project and audit those pins.
+        # `--strict` still fails the job when a dependency is vulnerable or
+        # cannot be audited. Do not append `|| true`.
+        run: |
+          python -m pip freeze --exclude-editable > "${RUNNER_TEMP:-/tmp}/audit-reqs.txt"
+          pip-audit --strict --no-deps -r "${RUNNER_TEMP:-/tmp}/audit-reqs.txt"
 
       - name: Generate SBOM (CycloneDX)
         run: cyclonedx-py environment --output-format json --outfile sbom.json || true
