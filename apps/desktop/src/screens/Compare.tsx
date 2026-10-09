@@ -103,6 +103,8 @@ export default function Compare(): JSX.Element {
               <div className="label">{t.compare.unchanged}</div>
             </div>
           </div>
+          {/* Scan markdown is untrusted text. Keep it in a pre, never HTML. */}
+          <pre className="compare-report">{result.markdown}</pre>
           <p className="muted">
             {t.compare.openHead}{" "}
             <Link to={`/scans/${result.head}`}>{t.compare.viewHead}</Link>
