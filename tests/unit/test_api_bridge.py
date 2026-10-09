@@ -142,11 +142,18 @@ def test_sse_events_stream_terminates(client, stored_scan):
 def test_checkpoints_and_resume_endpoint(client, tmp_path):
     """Interrupted scans appear in /checkpoints and can be resumed via POST."""
 
-    from isahat.core.state import ScanCheckpoint  # noqa: PLC0415
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
 
     with ScanStore(tmp_path / "isahat.db") as store:
         store.save_checkpoint(
-            ScanCheckpoint(scan_id="dead1234beef", target="http://127.0.0.1:9", stage="crawl")
+            ScanCheckpoint(
+                scan_id="dead1234beef",
+                target="http://127.0.0.1:9",
+                stage="crawl",
+                contract=ScanContract(
+                    profile="safe", scan_type="web", rate_limit_check=False
+                ),
+            )
         )
 
     listed = client.get("/checkpoints").json()
@@ -165,6 +172,107 @@ def test_checkpoints_and_resume_endpoint(client, tmp_path):
 
     # Unknown checkpoint → 404.
     assert client.post("/scans/nope/resume").status_code == 404
+
+
+def test_resume_without_contract_is_refused(client, tmp_path):
+    """A checkpoint saved before contracts existed must not resume as ``safe``."""
+
+    from isahat.core.state import ScanCheckpoint  # noqa: PLC0415
+
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(scan_id="legacy1", target="http://127.0.0.1:9", stage="crawl")
+        )
+
+    response = client.post("/scans/legacy1/resume")
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "no scan contract" in detail
+    assert "default" in detail
+    assert client.get("/scans/legacy1/status").status_code == 404
+
+
+def test_resume_authenticated_checkpoint_is_refused(client, tmp_path):
+    """Credentials are not stored, so an authenticated scan cannot be resumed."""
+
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    secret = "super-secret-token"
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="auth1",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(
+                    profile="safe",
+                    scan_type="web",
+                    rate_limit_check=False,
+                    authenticated=True,
+                ),
+            )
+        )
+
+    response = client.post("/scans/auth1/resume")
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "authenticated" in detail.lower()
+    assert "credential" in detail.lower()
+    assert secret not in detail
+    assert client.get("/scans/auth1/status").status_code == 404
+
+
+def test_resume_restores_saved_contract(client, tmp_path, monkeypatch):
+    """Resume rebuilds the original profile, type and rate-limit flag."""
+
+    from isahat.core.engine import ScanEngine  # noqa: PLC0415
+    from isahat.core.state import ScanCheckpoint, ScanContract  # noqa: PLC0415
+
+    captured: dict[str, object] = {}
+    original_init = ScanEngine.__init__
+
+    def _init(self, target, config, **kwargs):  # noqa: ANN001
+        captured["target"] = target
+        captured["profile"] = config.scan.profile
+        captured["scan_type"] = kwargs.get("scan_type")
+        captured["auth"] = kwargs.get("auth")
+        captured["rate_limit_checks"] = config.safety.rate_limit_checks
+        original_init(self, target, config, **kwargs)
+
+    async def _run(self):  # noqa: ANN001
+        raise RuntimeError("stop-before-scan")
+
+    monkeypatch.setattr(ScanEngine, "__init__", _init)
+    monkeypatch.setattr(ScanEngine, "run", _run)
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="contract1",
+                target="http://127.0.0.1:9",
+                stage="detectors",
+                contract=ScanContract(
+                    profile="ci", scan_type="api", rate_limit_check=True
+                ),
+            )
+        )
+
+    response = client.post("/scans/contract1/resume")
+    assert response.status_code == 202
+    deadline = time.time() + 10
+    status = {"status": "running"}
+    while time.time() < deadline:
+        status = client.get("/scans/contract1/status").json()
+        if status["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert status["status"] == "error"
+    assert captured == {
+        "target": "http://127.0.0.1:9",
+        "profile": "ci",
+        "scan_type": "api",
+        "auth": None,
+        "rate_limit_checks": True,
+    }
 
 
 def test_unknown_scan_404(client):

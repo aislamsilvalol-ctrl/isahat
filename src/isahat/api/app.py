@@ -39,6 +39,7 @@ from isahat.core.config import load_config
 from isahat.core.engine import ScanEngine
 from isahat.core.models import FindingAnnotation, FindingState, ScanResult, Severity
 from isahat.core.scope import ScopeViolation
+from isahat.core.state import ResumeRejected, require_resume_contract
 from isahat.reporting import compare_scans, extension_for, render
 from isahat.reporting.compare import diff_to_markdown
 from isahat.storage import ScanStore
@@ -313,13 +314,26 @@ def create_app(
                 status_code=404,
                 detail=f"no checkpoint for scan: {scan_id}",
             )
+        try:
+            contract = require_resume_contract(checkpoint)
+        except ResumeRejected as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         job = _ScanJob(scan_id, target=checkpoint.target)
         jobs[scan_id] = job
         await job.publish("resume", f"resuming from stage '{checkpoint.stage}'")
         # Resume re-runs with the same scan id; the engine loads the checkpoint
         # from the store itself. Authorisation was confirmed for the original
-        # run — the checkpoint is proof of it.
-        request = ScanRequest(target=checkpoint.target, confirmed=True)
+        # run — the checkpoint is proof of it. Profile, type and the rate-limit
+        # flag come from that checkpoint, not from ScanRequest defaults.
+        # Credentials are not in the contract; authenticated scans are rejected
+        # above, so auth stays empty.
+        request = ScanRequest(
+            target=checkpoint.target,
+            profile=contract.profile,
+            scan_type=contract.scan_type,
+            rate_limit_check=contract.rate_limit_check,
+            confirmed=True,
+        )
         job.task = asyncio.create_task(_run_scan(job, request))
         return ScanAccepted(scan_id=scan_id, target=checkpoint.target)
 

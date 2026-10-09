@@ -178,6 +178,11 @@ def test_interrupted_scan_resumes_from_checkpoint(lab_server, tmp_path):
         checkpoint = store.load_checkpoint(scan_id)
         assert checkpoint is not None
         assert checkpoint.stage == "detectors"
+        assert checkpoint.contract is not None
+        assert checkpoint.contract.profile == "safe"
+        assert checkpoint.contract.scan_type == "web"
+        assert checkpoint.contract.rate_limit_check is False
+        assert checkpoint.contract.authenticated is False
         assert len(checkpoint.completed_detectors) == len(detectors) - 1
         assert len(checkpoint.findings) > 0  # findings so far were preserved
 
