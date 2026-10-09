@@ -33,6 +33,7 @@ from isahat.core.state import (
     CheckpointStore,
     ResponseSnapshot,
     ScanCheckpoint,
+    ScanContract,
 )
 
 ProgressCallback = Callable[[str, str], None]
@@ -188,6 +189,17 @@ class ScanEngine:
         self._emit("done", f"{len(result.findings)} findings")
         return result
 
+    def _scan_contract(self) -> ScanContract:
+        """Contract persisted with every new checkpoint. Never includes secrets."""
+
+        auth = self._auth
+        return ScanContract(
+            profile=self.config.scan.profile,
+            scan_type=self.scan_type,
+            rate_limit_check=self.config.safety.rate_limit_checks,
+            authenticated=auth is not None and not auth.is_empty(),
+        )
+
     def _new_checkpoint(
         self, result: ScanResult, responses: list[HttpResponse], *, stage: str
     ) -> ScanCheckpoint:
@@ -198,6 +210,7 @@ class ScanEngine:
             endpoints=result.endpoints,
             forms=result.forms,
             responses=[ResponseSnapshot.from_response(r) for r in responses],
+            contract=self._scan_contract(),
         )
 
     def _collect_technologies(self, responses: list[HttpResponse]) -> list[Technology]:

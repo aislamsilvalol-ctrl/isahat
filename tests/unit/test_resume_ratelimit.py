@@ -6,12 +6,19 @@ import sqlite3
 
 import pytest
 
+from isahat.core.auth import AuthConfig
 from isahat.core.config import ScanConfig
 from isahat.core.detectors.base import Detector, DetectorContext
 from isahat.core.detectors.rate_limiting import RateLimitingDetector
 from isahat.core.engine import ScanEngine
 from isahat.core.models import Confidence, ScanResult, Severity
-from isahat.core.state import ResponseSnapshot, ScanCheckpoint
+from isahat.core.state import (
+    ResponseSnapshot,
+    ResumeRejected,
+    ScanCheckpoint,
+    ScanContract,
+    require_resume_contract,
+)
 from isahat.storage import ScanStore
 from tests.unit.helpers import FakeClient, make_response, make_scope
 
@@ -316,6 +323,144 @@ async def test_persisted_checkpoint_has_no_auth_material(tmp_path):
     assert any("session" in finding.title for finding in cookies)
     exposed = await SensitiveDataExposureDetector().run(ctx)
     assert exposed
+
+
+def test_new_checkpoint_records_contract_without_secrets():
+    secret = "super-secret-token"
+    config = ScanConfig()
+    config.scan.profile = "deep"
+    config.safety.rate_limit_checks = True
+    engine = ScanEngine(
+        TARGET,
+        config,
+        scan_type="api",
+        auth=AuthConfig(headers={"Authorization": f"Bearer {secret}"}),
+    )
+    result = ScanResult(
+        id=engine.scan_id,
+        target=TARGET,
+        scope={"target": TARGET, "allowed_hosts": ["example.com"]},
+    )
+    checkpoint = engine._new_checkpoint(result, [], stage="apis")
+    assert checkpoint.contract is not None
+    assert checkpoint.contract.profile == "deep"
+    assert checkpoint.contract.scan_type == "api"
+    assert checkpoint.contract.rate_limit_check is True
+    assert checkpoint.contract.authenticated is True
+    dumped = checkpoint.model_dump_json()
+    assert secret not in dumped
+    assert "Bearer" not in dumped
+
+
+def test_legacy_checkpoint_and_authenticated_resume_are_rejected():
+    legacy = ScanCheckpoint.model_validate(
+        {"scan_id": "old", "target": TARGET, "stage": "apis"}
+    )
+    assert legacy.contract is None
+    with pytest.raises(ResumeRejected, match="no scan contract"):
+        require_resume_contract(legacy)
+
+    authenticated = ScanCheckpoint(
+        scan_id="auth",
+        target=TARGET,
+        contract=ScanContract(
+            profile="safe", scan_type="web", rate_limit_check=False, authenticated=True
+        ),
+    )
+    with pytest.raises(ResumeRejected, match="credential store"):
+        require_resume_contract(authenticated)
+
+
+def test_cli_resume_refuses_missing_and_authenticated_contracts(tmp_path):
+    from typer.testing import CliRunner  # noqa: PLC0415
+
+    from isahat.cli.main import app as cli_app  # noqa: PLC0415
+
+    db = tmp_path / "isahat.db"
+    secret = "super-secret-token"
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        '{"headers": {"Authorization": "Bearer ' + secret + '"}}', encoding="utf-8"
+    )
+    with ScanStore(db) as store:
+        store.save_checkpoint(ScanCheckpoint(scan_id="old", target=TARGET, stage="crawl"))
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="auth",
+                target=TARGET,
+                stage="detectors",
+                contract=ScanContract(
+                    profile="safe",
+                    scan_type="web",
+                    rate_limit_check=False,
+                    authenticated=True,
+                ),
+            )
+        )
+
+    runner = CliRunner()
+    missing = runner.invoke(
+        cli_app, ["scan", TARGET, "--resume", "old", "--db", str(db), "--yes"]
+    )
+    assert missing.exit_code == 2
+    assert "no scan contract" in missing.output
+
+    refused = runner.invoke(
+        cli_app,
+        [
+            "scan",
+            TARGET,
+            "--resume",
+            "auth",
+            "--auth",
+            str(auth_file),
+            "--db",
+            str(db),
+            "--yes",
+        ],
+    )
+    assert refused.exit_code == 2
+    assert "authenticated" in refused.output.lower()
+    assert secret not in refused.output
+
+
+def test_cli_resume_restores_contract(tmp_path, monkeypatch):
+    from typer.testing import CliRunner  # noqa: PLC0415
+
+    from isahat.cli.main import app as cli_app  # noqa: PLC0415
+
+    db = tmp_path / "isahat.db"
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(
+                scan_id="c1",
+                target=TARGET,
+                stage="detectors",
+                contract=ScanContract(profile="deep", scan_type="api", rate_limit_check=True),
+            )
+        )
+
+    captured: dict[str, object] = {}
+
+    def _scan(self):  # noqa: ANN001
+        captured["profile"] = self.config.scan.profile
+        captured["scan_type"] = self.scan_type
+        captured["rate_limit_checks"] = self.config.safety.rate_limit_checks
+        captured["auth"] = self._auth
+        raise RuntimeError("stop-before-network")
+
+    monkeypatch.setattr(ScanEngine, "scan", _scan)
+    result = CliRunner().invoke(
+        cli_app,
+        ["scan", TARGET, "--resume", "c1", "--db", str(db), "--yes", "--quiet", "--profile", "safe"],
+    )
+    assert result.exit_code == 1
+    assert captured == {
+        "profile": "deep",
+        "scan_type": "api",
+        "rate_limit_checks": True,
+        "auth": None,
+    }
 
 
 def test_checkpoint_body_is_capped(tmp_path):

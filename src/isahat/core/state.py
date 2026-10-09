@@ -108,8 +108,42 @@ class ResponseSnapshot(BaseModel):
         )
 
 
+class ScanContract(BaseModel):
+    """Non-secret parameters of the scan that produced a checkpoint.
+
+    Headers and cookies are not fields here. IsaHat has no secure credential
+    store, so authentication material is never written into the checkpoint.
+    ``authenticated`` only records that the original run attached some, which
+    makes resume refuse instead of continuing without it.
+    """
+
+    profile: str
+    scan_type: str
+    rate_limit_check: bool
+    authenticated: bool = False
+
+
+class ResumeRejected(Exception):
+    """Resuming this checkpoint would invent parameters the scan did not save."""
+
+
+_MISSING_SCAN_CONTRACT = (
+    "Checkpoint has no scan contract. Refusing to resume with default profile, "
+    "scan type, authentication, or rate-limit settings. Start a new scan."
+)
+_AUTHENTICATED_SCAN_NOT_RESUMABLE = (
+    "Refusing to resume an authenticated scan. There is no secure credential "
+    "store, so headers and cookies were not saved in the checkpoint. "
+    "Start a new scan and provide auth again."
+)
+
+
 class ScanCheckpoint(BaseModel):
-    """Everything needed to resume an interrupted scan."""
+    """Everything needed to resume an interrupted scan.
+
+    ``contract`` is optional so checkpoints written before it existed still
+    load. Resume must reject those rows. It must not fill in defaults.
+    """
 
     scan_id: str
     target: str
@@ -121,6 +155,23 @@ class ScanCheckpoint(BaseModel):
     completed_detectors: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     requests_made: int = 0
+    contract: ScanContract | None = None
+
+
+def require_resume_contract(checkpoint: ScanCheckpoint) -> ScanContract:
+    """Return the saved contract, or reject a legacy or authenticated checkpoint.
+
+    A missing contract must not fall back to profile ``safe``, type ``web`` or
+    ``rate_limit_check=False``. Those defaults would scan a different program
+    than the one that was interrupted.
+    """
+
+    contract = checkpoint.contract
+    if contract is None:
+        raise ResumeRejected(_MISSING_SCAN_CONTRACT)
+    if contract.authenticated:
+        raise ResumeRejected(_AUTHENTICATED_SCAN_NOT_RESUMABLE)
+    return contract
 
 
 class CheckpointStore(Protocol):

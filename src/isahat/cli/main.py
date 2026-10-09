@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 from rich.console import Console
@@ -22,6 +23,7 @@ from isahat.core.detectors import default_detectors
 from isahat.core.engine import ScanEngine
 from isahat.core.models import ScanResult, Severity
 from isahat.core.scope import Scope, ScopeViolation
+from isahat.core.state import ResumeRejected, require_resume_contract
 from isahat.reporting import compare_scans, diff_to_markdown, extension_for, render
 from isahat.storage import ScanStore
 
@@ -48,7 +50,7 @@ def _parse_severity(value: str | None) -> Severity | None:
         raise typer.BadParameter(f"severity must be one of {_SEVERITY_CHOICES}") from exc
 
 
-def _exit(code: ExitCode) -> None:
+def _exit(code: ExitCode) -> NoReturn:
     raise typer.Exit(code=int(code))
 
 
@@ -202,13 +204,27 @@ def scan(
     store: ScanStore | None = None
     if not no_store:
         store = ScanStore(db_path)
-        if resume is not None and store.load_checkpoint(resume) is None:
-            console.print(
-                f"[red]No checkpoint found for scan '{resume}'.[/red] "
-                "Checkpoints exist only for interrupted scans run with storage enabled."
-            )
-            store.close()
-            _exit(ExitCode.USAGE)
+        if resume is not None:
+            checkpoint = store.load_checkpoint(resume)
+            if checkpoint is None:
+                console.print(
+                    f"[red]No checkpoint found for scan '{resume}'.[/red] "
+                    "Checkpoints exist only for interrupted scans run with storage enabled."
+                )
+                store.close()
+                _exit(ExitCode.USAGE)
+            try:
+                contract = require_resume_contract(checkpoint)
+            except ResumeRejected as exc:
+                console.print(f"[red]{exc}[/red]")
+                store.close()
+                _exit(ExitCode.USAGE)
+            # The interrupted scan's contract wins over CLI defaults. Flags
+            # passed on this command are not a second copy of that contract.
+            config.scan.profile = contract.profile
+            scan_type = contract.scan_type
+            rate_limit_check = contract.rate_limit_check
+            config.safety.rate_limit_checks = contract.rate_limit_check
 
     engine = ScanEngine(
         target,
