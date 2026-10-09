@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -554,6 +555,45 @@ def test_cli_resume_releases_lease_on_interrupt(tmp_path, monkeypatch):
         ).fetchone()
         assert row["lease_until"] is None
         assert store.try_acquire_resume_lease("stop", 30) is True
+
+
+def test_save_checkpoint_renews_a_held_lease_only(tmp_path):
+    from isahat.storage.database import RESUME_LEASE_SECONDS  # noqa: PLC0415
+
+    db = tmp_path / "renew.db"
+    soon = datetime.now(UTC) + timedelta(seconds=45)
+    contract = ScanContract(profile="safe", scan_type="web", rate_limit_check=False)
+    with ScanStore(db) as store:
+        store.save_checkpoint(
+            ScanCheckpoint(scan_id="near", target=TARGET, stage="crawl", contract=contract)
+        )
+        store.save_checkpoint(
+            ScanCheckpoint(scan_id="free", target=TARGET, stage="crawl", contract=contract)
+        )
+        store._conn.execute(
+            "UPDATE checkpoints SET lease_until = ? WHERE scan_id = ?",
+            (soon.isoformat(), "near"),
+        )
+        store._conn.commit()
+        store.save_checkpoint(
+            ScanCheckpoint(scan_id="near", target=TARGET, stage="apis", contract=contract)
+        )
+        store.save_checkpoint(
+            ScanCheckpoint(scan_id="free", target=TARGET, stage="apis", contract=contract)
+        )
+        held_until = store._conn.execute(
+            "SELECT lease_until FROM checkpoints WHERE scan_id = ?", ("near",)
+        ).fetchone()["lease_until"]
+        free_until = store._conn.execute(
+            "SELECT lease_until FROM checkpoints WHERE scan_id = ?", ("free",)
+        ).fetchone()["lease_until"]
+
+    assert free_until is None
+    renewed = datetime.fromisoformat(held_until)
+    if renewed.tzinfo is None:
+        renewed = renewed.replace(tzinfo=UTC)
+    assert renewed > soon + timedelta(minutes=30)
+    assert renewed >= datetime.now(UTC) + timedelta(seconds=RESUME_LEASE_SECONDS - 120)
 
 
 def test_checkpoint_body_is_capped(tmp_path):
