@@ -55,6 +55,8 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "types-PyYAML>=6.0",
+    # Starlette's TestClient prefers httpx2. Plain httpx still runs the scanner.
+    "httpx2>=2.0",
 ]
 
 [project.scripts]

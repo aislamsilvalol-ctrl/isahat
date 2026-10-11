@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, type ScanRow, type Severity } from "../api/client";
+import { api, type CheckpointRow, type ScanRow, type Severity } from "../api/client";
 import { useI18n } from "../i18n";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
-interface CheckpointRow {
-  scan_id: string;
-  target: string;
-  stage: string;
-  saved_at: string;
-  running: boolean;
+function formatWhen(value: string): string {
+  if (!value.trim()) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
 }
 
 export function SeverityBadge({ value }: { value: Severity }): JSX.Element {
@@ -40,11 +39,12 @@ function InterruptedAudits({
       {checkpoints.map((cp) => (
         <div key={cp.scan_id} className="row-between checkpoint-row">
           <div>
-            <span className="mono">{cp.target}</span>{" "}
+            <Link className="mono" to={`/scans/${cp.scan_id}`}>
+              {cp.target}
+            </Link>{" "}
             <span className="muted">
               · {t.dashboard.resumeStage} <span className="mono">{cp.stage}</span> ·{" "}
-              {t.dashboard.resumeSaved}{" "}
-              {cp.saved_at ? new Date(cp.saved_at).toLocaleString() : ""}
+              {t.dashboard.resumeSaved} {formatWhen(cp.saved_at)}
             </span>
           </div>
           {cp.running ? (
@@ -179,7 +179,7 @@ export default function Dashboard(): JSX.Element {
                 <tr key={row.id}>
                   <td className="mono">{row.target}</td>
                   <td className="muted">
-                    {new Date(row.started_at).toLocaleString()}
+                    {formatWhen(row.started_at)}
                     {row.running && (
                       <span>
                         {" "}

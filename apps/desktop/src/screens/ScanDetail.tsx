@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
+  type CheckpointRow,
   type Finding,
   type FindingState,
   type ScanEvent,
@@ -12,6 +13,13 @@ import { useI18n } from "../i18n";
 import { SeverityBadge } from "./Dashboard";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
+function formatWhen(value: string): string {
+  if (!value.trim()) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString();
+}
+
 const SEV_COLOR: Record<Severity, string> = {
   critical: "var(--critical)",
   high: "var(--high)",
@@ -223,6 +231,10 @@ export default function ScanDetail(): JSX.Element {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [events, setEvents] = useState<ScanEvent[]>([]);
   const [running, setRunning] = useState(false);
+  const [startedAt, setStartedAt] = useState("");
+  const [checkpoint, setCheckpoint] = useState<CheckpointRow | null>(null);
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Severity | null>(null);
@@ -249,17 +261,85 @@ export default function ScanDetail(): JSX.Element {
         .then((status) => {
           if (!alive) return;
           setEvents(status.events);
+          setStartedAt(status.started_at ?? "");
+          setCheckpoint(null);
+          setLoadError(null);
           const isRunning = status.status === "running";
           setRunning(isRunning);
           if (status.status === "error") setRunError(status.detail);
           if (!isRunning) {
-            refreshScan();
-            clearInterval(poll);
-            source?.close();
+            api
+              .getScan(id)
+              .then((result) => {
+                if (!alive) return;
+                setScan(result);
+                setLoadError(null);
+                clearInterval(poll);
+                source?.close();
+              })
+              .catch(() => {
+                if (!alive) return;
+                // A failed run may not be stored yet. A leftover checkpoint is
+                // still resumable; do not present that as a missing scan.
+                api
+                  .listCheckpoints()
+                  .then((rows) => {
+                    if (!alive) return;
+                    const row = rows.find((item) => item.scan_id === id && !item.running) ?? null;
+                    if (row) {
+                      setCheckpoint(row);
+                      setLoadError(null);
+                      setRunning(false);
+                    } else {
+                      setLoadError(status.detail || "scan not found");
+                    }
+                    clearInterval(poll);
+                    source?.close();
+                  })
+                  .catch(() => {
+                    if (!alive) return;
+                    setLoadError(status.detail || "scan not found");
+                    clearInterval(poll);
+                    source?.close();
+                  });
+              });
           }
         })
         .catch(() => {
-          if (alive) refreshScan(); // finished scans have no live job
+          if (!alive) return;
+          // No in-memory job. A finished scan is in the store. A crash leaves
+          // a checkpoint and neither of those.
+          api
+            .getScan(id)
+            .then((result) => {
+              if (!alive) return;
+              setScan(result);
+              setLoadError(null);
+              setCheckpoint(null);
+              setRunning(false);
+              clearInterval(poll);
+              source?.close();
+            })
+            .catch((err: Error) => {
+              if (!alive) return;
+              api
+                .listCheckpoints()
+                .then((rows) => {
+                  if (!alive) return;
+                  const row = rows.find((item) => item.scan_id === id) ?? null;
+                  if (row && !row.running) {
+                    setCheckpoint(row);
+                    setLoadError(null);
+                    setRunning(false);
+                    return;
+                  }
+                  setCheckpoint(null);
+                  setLoadError(err.message);
+                })
+                .catch(() => {
+                  if (alive) setLoadError(err.message);
+                });
+            });
         });
     }, 1200);
 
@@ -290,7 +370,51 @@ export default function ScanDetail(): JSX.Element {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [events]);
 
-  if (loadError && !scan) {
+  async function onResume(): Promise<void> {
+    if (!id) return;
+    setResumeBusy(true);
+    setResumeError(null);
+    try {
+      await api.resumeScan(id);
+      setCheckpoint(null);
+      setRunning(true);
+    } catch (err) {
+      setResumeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResumeBusy(false);
+    }
+  }
+
+  if (checkpoint && !scan && !running) {
+    return (
+      <div>
+        <h1 className="mono" style={{ fontSize: 16, letterSpacing: 0 }}>
+          {checkpoint.target}
+        </h1>
+        <div className="card">
+          <h2 style={{ marginTop: 0, fontSize: 16 }}>{t.scan.interruptedTitle}</h2>
+          <p>{t.scan.interruptedBody}</p>
+          <p className="muted">
+            {t.dashboard.resumeStage} <span className="mono">{checkpoint.stage}</span>
+            {" · "}
+            {t.dashboard.resumeSaved} {formatWhen(checkpoint.saved_at)}
+          </p>
+          {runError && (
+            <p className="error-text">
+              {t.scan.failed}: {runError}
+            </p>
+          )}
+          {resumeError && <p className="error-text">{resumeError}</p>}
+          <button type="button" disabled={resumeBusy} onClick={() => void onResume()}>
+            {resumeBusy ? t.dashboard.resuming : `▶ ${t.dashboard.resume}`}
+          </button>
+        </div>
+        <Link to="/">{t.scan.back}</Link>
+      </div>
+    );
+  }
+
+  if (loadError && !scan && !running) {
     return (
       <div>
         <h1>{t.scan.failed}</h1>
@@ -329,6 +453,12 @@ export default function ScanDetail(): JSX.Element {
                 {scan.stats.requests_made} {t.scan.requests}
                 {durationSeconds !== null && ` · ${durationSeconds.toFixed(1)}s`}
                 {scan.authenticated && ` · ${t.scan.authenticated}`}
+              </>
+            ) : running ? (
+              <>
+                {t.scan.runningTitle}
+                {formatWhen(startedAt) &&
+                  ` · ${t.scan.started} ${formatWhen(startedAt)}`}
               </>
             ) : (
               t.scan.connecting
@@ -369,6 +499,11 @@ export default function ScanDetail(): JSX.Element {
             <strong>
               <span className="spinner" /> {t.scan.runningTitle}
             </strong>
+            {formatWhen(startedAt) && (
+              <span className="muted">
+                {t.scan.started} {formatWhen(startedAt)}
+              </span>
+            )}
           </div>
           <div className="event-log" ref={logRef}>
             {events.map((event, i) => (

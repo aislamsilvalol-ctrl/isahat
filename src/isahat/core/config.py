@@ -28,6 +28,31 @@ class ScopeConfig(BaseModel):
     exclude: list[str] = Field(default_factory=list)
 
 
+# Labels accepted when a scan starts. The engine does not branch on them.
+# Any other name would be stored as if a different mode had run.
+IMPLEMENTED_PROFILE = "safe"
+IMPLEMENTED_SCAN_TYPE = "web"
+
+
+def unimplemented_scan_mode_reason(profile: str, scan_type: str) -> str | None:
+    """Why this profile or scan type cannot start a scan, or ``None`` if it can.
+
+    Resume does not use this. A checkpoint keeps the labels it was saved with.
+    """
+
+    if profile != IMPLEMENTED_PROFILE:
+        return (
+            f"Profile '{profile}' is not available yet. "
+            f"Only '{IMPLEMENTED_PROFILE}' is implemented."
+        )
+    if scan_type != IMPLEMENTED_SCAN_TYPE:
+        return (
+            f"Scan type '{scan_type}' is not available yet. "
+            "The engine always crawls the site and discovers APIs together."
+        )
+    return None
+
+
 class ScanSettings(BaseModel):
     profile: str = "safe"
     concurrency: int = 5

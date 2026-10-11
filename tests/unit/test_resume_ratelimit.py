@@ -102,7 +102,6 @@ def test_checkpoint_store_roundtrip(tmp_path):
             scan_id="abc123",
             target=TARGET,
             stage="detectors",
-            requests_made=12,
             responses=[
                 ResponseSnapshot.from_response(make_response(TARGET + "/login", status=200))
             ],
@@ -111,12 +110,39 @@ def test_checkpoint_store_roundtrip(tmp_path):
         loaded = store.load_checkpoint("abc123")
         assert loaded is not None
         assert loaded.stage == "detectors"
-        assert loaded.requests_made == 12
+        assert "requests_made" not in loaded.model_dump()
         restored = loaded.responses[0].to_response()
         assert restored.url == TARGET + "/login"
         assert restored.status == 200
         store.delete_checkpoint("abc123")
         assert store.load_checkpoint("abc123") is None
+
+
+def test_checkpoint_with_legacy_requests_made_still_loads(tmp_path):
+    """Checkpoints saved before ``requests_made`` was removed must still load.
+
+    The engine never read the field. It is an extra key on the stored JSON.
+    """
+
+    import json  # noqa: PLC0415
+
+    payload = ScanCheckpoint(scan_id="old", target=TARGET, stage="apis").model_dump()
+    payload["requests_made"] = 12
+    with ScanStore(tmp_path / "isahat.db") as store:
+        store._conn.execute(
+            """
+            INSERT INTO checkpoints (scan_id, target, stage, payload, saved_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("old", TARGET, "apis", json.dumps(payload), "2024-01-01T00:00:00+00:00"),
+        )
+        store._conn.commit()
+        loaded = store.load_checkpoint("old")
+    assert loaded is not None
+    assert loaded.scan_id == "old"
+    assert loaded.stage == "apis"
+    assert loaded.target == TARGET
+    assert "requests_made" not in loaded.model_dump()
 
 
 def test_checkpoint_upsert_overwrites(tmp_path):
