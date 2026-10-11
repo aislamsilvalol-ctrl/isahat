@@ -27,6 +27,7 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -39,7 +40,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from isahat import __version__
 from isahat.api.token import bridge_token_path, load_or_create_bridge_token
 from isahat.core.auth import AuthConfig
-from isahat.core.config import load_config
+from isahat.core.config import load_config, unimplemented_scan_mode_reason
 from isahat.core.engine import ScanEngine
 from isahat.core.models import FindingAnnotation, FindingState, ScanResult, Severity
 from isahat.core.scope import ScopeViolation
@@ -83,6 +84,7 @@ class ScanStatus(BaseModel):
     scan_id: str
     status: str  # running | done | error
     detail: str = ""
+    started_at: str = ""
     events: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -96,6 +98,7 @@ class _ScanJob:
     def __init__(self, scan_id: str, target: str = "") -> None:
         self.scan_id = scan_id
         self.target = target
+        self.started_at = datetime.now(UTC).isoformat()
         self.events: list[dict[str, Any]] = []
         self.status = "running"
         self.detail = ""
@@ -328,6 +331,9 @@ def create_app(
                     "authorisation banner and resend with confirmed=true."
                 ),
             )
+        reason = unimplemented_scan_mode_reason(request.profile, request.scan_type)
+        if reason is not None:
+            raise HTTPException(status_code=400, detail=reason)
         scan_id = uuid.uuid4().hex[:12]
         job = _ScanJob(scan_id, target=request.target)
         jobs[scan_id] = job
@@ -369,7 +375,7 @@ def create_app(
                         "id": scan_id,
                         "target": job.target,
                         "profile": "",
-                        "started_at": "",
+                        "started_at": job.started_at,
                         "finished_at": None,
                         "findings_total": 0,
                         "by_severity": {},
@@ -460,9 +466,18 @@ def create_app(
             result = store.get(scan_id)
             if result is None:
                 raise HTTPException(status_code=404, detail=f"scan not found: {scan_id}")
-            return ScanStatus(scan_id=scan_id, status="done", detail=result.id)
+            return ScanStatus(
+                scan_id=scan_id,
+                status="done",
+                detail=result.id,
+                started_at=result.started_at.isoformat(),
+            )
         return ScanStatus(
-            scan_id=scan_id, status=job.status, detail=job.detail, events=job.events
+            scan_id=scan_id,
+            status=job.status,
+            detail=job.detail,
+            started_at=job.started_at,
+            events=job.events,
         )
 
     @app.get("/scans/{scan_id}/events")

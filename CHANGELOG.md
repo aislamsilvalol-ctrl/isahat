@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A new scan accepts only the `safe` profile and the `web` scan type. The
+  engine does not branch on those labels, so the desktop form no longer offers
+  `standard` or a separate API type, and the CLI and `POST /scans` reject
+  them. Resuming a checkpoint still uses the labels saved on it.
+- A scan that is still running is listed with the time it started. Opening an
+  interrupted scan shows that state and can resume the existing checkpoint.
+- `labs/README.md` describes only the lab app that is in the tree.
+- Checkpoint JSON may still contain `requests_made`. That field was never read
+  and is ignored on load.
+- `.env.example` records that `ISAHAT_AI_PROVIDER`, `ISAHAT_OLLAMA_HOST`,
+  `ISAHAT_AI_MODEL` and `ISAHAT_AI_API_KEY` are not read.
+- The test extra installs `httpx2`, which is what Starlette's `TestClient` uses.
 - Saving a checkpoint renews a held resume lease for another hour. A
   checkpoint that has no lease is left without one.
 - `isahat scan --resume` takes the same resume lease as the bridge. A second

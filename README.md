@@ -69,8 +69,8 @@ See [INSTALLATION.md](docs/INSTALLATION.md) for Docker, PyPI (planned) and CI us
 # Audit a target you are authorised to test
 isahat scan https://example.com
 
-# API scan, JSON output, fail CI on high+ findings
-isahat scan https://api.example.com --type api --format json --fail-on high
+# JSON output, fail CI on high+ findings. Only the safe/web scan exists.
+isahat scan https://api.example.com --format json --fail-on high
 
 # Use a config file and write an HTML-free Markdown + JSON report
 isahat scan https://example.com --format both -o report

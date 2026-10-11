@@ -56,7 +56,7 @@ npm run tauri dev                 # needs Rust toolchain
 ## What the app does today
 
 - Dashboard with per-severity totals and live scan history (auto-refresh).
-- New audit form with target/profile/type/auth import and the same
+- New audit form with target, the safe profile (the only one implemented), auth import and the same
   authorisation checklist the CLI enforces (the bridge rejects unconfirmed
   scans regardless of the UI).
 - Live audit view: progress events streamed over SSE, findings as they are

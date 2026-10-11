@@ -12,8 +12,6 @@ export default function NewScan(): JSX.Element {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [target, setTarget] = useState("");
-  const [profile, setProfile] = useState("safe");
-  const [scanType, setScanType] = useState("web");
   const [authJson, setAuthJson] = useState("");
   const [rateLimitCheck, setRateLimitCheck] = useState(false);
   const [checks, setChecks] = useState({ own: false, scope: false, safe: false });
@@ -40,8 +38,8 @@ export default function NewScan(): JSX.Element {
     try {
       const accepted = await api.startScan({
         target: target.trim(),
-        profile,
-        scan_type: scanType,
+        profile: "safe",
+        scan_type: "web",
         auth,
         rate_limit_check: rateLimitCheck,
         confirmed: true, // allChecked is enforced before submit is possible
@@ -69,17 +67,10 @@ export default function NewScan(): JSX.Element {
           type="url"
         />
 
-        <label htmlFor="profile">{t.newScan.profile}</label>
-        <select id="profile" value={profile} onChange={(e) => setProfile(e.target.value)}>
-          <option value="safe">{t.newScan.profileSafe}</option>
-          <option value="standard">{t.newScan.profileStandard}</option>
-        </select>
-
-        <label htmlFor="scanType">{t.newScan.scanType}</label>
-        <select id="scanType" value={scanType} onChange={(e) => setScanType(e.target.value)}>
-          <option value="web">{t.newScan.typeWeb}</option>
-          <option value="api">{t.newScan.typeApi}</option>
-        </select>
+        <p className="muted" style={{ marginTop: 16 }}>
+          <strong>{t.newScan.profile}:</strong> {t.newScan.profileSafe}
+        </p>
+        <p className="muted">{t.newScan.pipelineNote}</p>
 
         <label htmlFor="auth">{t.newScan.auth}</label>
         <textarea

@@ -18,7 +18,12 @@ from isahat.api.token import (
 from isahat.cli import console as ui
 from isahat.cli.exit_codes import ExitCode
 from isahat.core.auth import AuthConfig, load_auth
-from isahat.core.config import ScanConfig, find_default_config, load_config
+from isahat.core.config import (
+    ScanConfig,
+    find_default_config,
+    load_config,
+    unimplemented_scan_mode_reason,
+)
 from isahat.core.detectors import default_detectors
 from isahat.core.engine import ScanEngine
 from isahat.core.models import ScanResult, Severity
@@ -122,8 +127,19 @@ def _write_reports(
 @app.command()
 def scan(
     target: str = typer.Argument(..., help="Target URL, e.g. https://example.com"),
-    profile: str = typer.Option("safe", "--profile", help="Audit profile (safe by default)."),
-    scan_type: str = typer.Option("web", "--type", help="Scan type: web or api."),
+    profile: str = typer.Option(
+        "safe",
+        "--profile",
+        help="Only 'safe' is implemented. Any other profile is rejected.",
+    ),
+    scan_type: str = typer.Option(
+        "web",
+        "--type",
+        help=(
+            "Only 'web' is implemented. The engine always crawls the site and "
+            "discovers APIs together; other types are rejected."
+        ),
+    ),
     config_path: Path | None = typer.Option(
         None, "--config", "-c", help="Path to isahat.yml (auto-detected if omitted)."
     ),
@@ -180,6 +196,14 @@ def scan(
     except (FileNotFoundError, ValueError) as exc:
         console.print(f"[red]Configuration error:[/red] {exc}")
         _exit(ExitCode.USAGE)
+
+    # Resume keeps the labels saved on the checkpoint. A new scan must not
+    # record a profile or type the engine does not implement.
+    if resume is None:
+        reason = unimplemented_scan_mode_reason(profile, scan_type)
+        if reason is not None:
+            console.print(f"[red]{reason}[/red]")
+            _exit(ExitCode.USAGE)
 
     if rate_limit_check:
         config.safety.rate_limit_checks = True

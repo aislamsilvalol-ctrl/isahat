@@ -114,10 +114,10 @@ covered by `tests/unit/test_api_bridge.py`.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /health` | Liveness + engine version. |
-| `POST /scans` | Start a scan. Body: `target`, `profile`, `scan_type`, optional `auth`, `rate_limit_check`, and **required** `confirmed: true` (the client must show the authorisation banner first). Returns `202` + `scan_id`. |
-| `GET /scans` | Scan history (newest first), with `running` flags. |
+| `POST /scans` | Start a scan. Body: `target`, `profile`, `scan_type`, optional `auth`, `rate_limit_check`, and **required** `confirmed: true` (the client must show the authorisation banner first). `profile` must be `safe` and `scan_type` must be `web`; anything else is `400` because those labels do not select a different pipeline. Returns `202` + `scan_id`. Resume still uses the labels saved on the checkpoint. |
+| `GET /scans` | Scan history (newest first), with `running` flags. An in-flight scan includes the time that job started in `started_at`. |
 | `GET /scans/{id}` | Full `ScanResult` JSON with stored review annotations applied. |
-| `GET /scans/{id}/status` | `running`/`done`/`error` plus the progress event buffer. |
+| `GET /scans/{id}/status` | `running`/`done`/`error`, `started_at`, and the progress event buffer. |
 | `GET /scans/{id}/events` | SSE stream of progress events; ends with a terminal `done`/`error` event. |
 | `GET /scans/{id}/report?fmt=` | Rendered report download (`json`, `markdown`, `html`, `csv`, `sarif`). |
 | `POST /scans/{id}/findings/{fid}/annotation` | Set review state (`fixed`, `false_positive`, `accepted_risk`, `open`) + optional comment. |

@@ -96,7 +96,16 @@ export interface ScanStatus {
   scan_id: string;
   status: "running" | "done" | "error";
   detail: string;
+  started_at: string;
   events: ScanEvent[];
+}
+
+export interface CheckpointRow {
+  scan_id: string;
+  target: string;
+  stage: string;
+  saved_at: string;
+  running: boolean;
 }
 
 export interface CompareResult {
@@ -195,16 +204,7 @@ export const api = {
   compare: (base: string, head: string) =>
     request<CompareResult>(`/compare?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`),
 
-  listCheckpoints: () =>
-    request<
-      {
-        scan_id: string;
-        target: string;
-        stage: string;
-        saved_at: string;
-        running: boolean;
-      }[]
-    >("/checkpoints"),
+  listCheckpoints: () => request<CheckpointRow[]>("/checkpoints"),
 
   resumeScan: (scanId: string) =>
     request<{ scan_id: string; target: string }>(

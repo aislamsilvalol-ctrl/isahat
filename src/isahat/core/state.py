@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 from typing import Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from isahat.core.http import HttpResponse
 from isahat.core.models import ApiSpec, DiscoveredForm, Endpoint, Finding, ScanResult
@@ -143,7 +143,13 @@ class ScanCheckpoint(BaseModel):
 
     ``contract`` is optional so checkpoints written before it existed still
     load. Resume must reject those rows. It must not fill in defaults.
+
+    Older checkpoints also stored ``requests_made``. The engine never wrote a
+    real count there and never read it. ``extra="ignore"`` drops that key so
+    those files still load.
     """
+
+    model_config = ConfigDict(extra="ignore")
 
     scan_id: str
     target: str
@@ -154,7 +160,6 @@ class ScanCheckpoint(BaseModel):
     apis: list[ApiSpec] = Field(default_factory=list)
     completed_detectors: list[str] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
-    requests_made: int = 0
     contract: ScanContract | None = None
 
 

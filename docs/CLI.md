@@ -20,8 +20,8 @@ isahat scan <TARGET> [options]
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--profile` | `safe` | Audit profile. |
-| `--type` | `web` | Scan type: `web` or `api`. |
+| `--profile` | `safe` | Only `safe` is implemented. Any other value is rejected. |
+| `--type` | `web` | Only `web` is implemented. The engine always crawls the site and discovers APIs together. Other values are rejected. |
 | `--config, -c` | auto | Path to `isahat.yml` (auto-detected in CWD). |
 | `--auth` | — | Path to `auth.json` (headers/cookies) for an authenticated scan. |
 | `--output, -o` | stdout | Write report(s) to a file. |
@@ -43,7 +43,7 @@ Examples:
 
 ```bash
 isahat scan https://example.com
-isahat scan https://api.example.com --type api
+isahat scan https://api.example.com --format json
 isahat scan https://example.com --format html -o report.html   # self-contained report
 isahat scan https://example.com --format json
 isahat scan https://example.com --severity high
@@ -126,7 +126,7 @@ isahat list --limit 20
 
 ```bash
 isahat plugins list            # list built-in detectors
-isahat plugins install <name>  # external registry: Phase 5
+isahat plugins install <name>  # not available yet (no plugin registry)
 ```
 
 ## `isahat doctor`
